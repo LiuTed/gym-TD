@@ -48,7 +48,7 @@ class TDSingle(gym.Env):
                 if action["Destruct"][r][c] == 1:
                     self.__board.tower_destruct([r,c])
         reward = self.__board.step()
-        done = self.__board.steps < 500
+        done = self.__board.steps >= 500
         states = {
             "Map": self.__board.get_states(),
             "Cost": self.__board.cost_def
@@ -63,7 +63,11 @@ class TDSingle(gym.Env):
             config.attacker_init_cost,
             50
         )
-        return self.__board.get_states()
+        states = {
+            "Map": self.__board.get_states(),
+            "Cost": self.__board.cost_def
+        }
+        return states
     
     def test(self):
         self.__board.summon_enemy(0)
@@ -72,7 +76,13 @@ class TDSingle(gym.Env):
         self.__board.tower_build([self.map_size//2, self.map_size//2])
         self.__board.step()
     def empty_step(self):
-        self.__board.step()
+        reward = self.__board.step()
+        done = self.__board.steps >= 500
+        states = {
+            "Map": self.__board.get_states(),
+            "Cost": self.__board.cost_def
+        }
+        return states, reward, done, None
     def random_enemy(self):
         t = self.np_random.randint(0, 4)
         if t == 3:
