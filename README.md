@@ -50,10 +50,10 @@ Defender is the player in most other TD games. Your goal is to build and upgrade
     A Python dict of this form:
     ```
     {
-        "Build": "A NumPy Array of shape (length, length) and dtype=np.bool. It represents whether to build a tower at this place.",
-        "ATKUp": "A NumPy Array of shape (length, length) and dtype=np.bool. It represents whether to upgrade the ATK of the tower at this place.",
-        "RangeUp": "A NumPy Array of shape (length, length) and dtype=np.bool. It represents whether to upgrade the attack range of the tower at this place.",
-        "Destruct": "A NumPy Array of shape (length, length) and dtype=np.bool. It represents whether to destruct the tower at this place. Destruction will return some costs spent on this tower."
+        "Build": "A NumPy Array of shape (length, length) and dtype=np.int32. It represents whether to build a tower at this place. (1 for True)",
+        "ATKUp": "A NumPy Array of shape (length, length) and dtype=np.int32. It represents whether to upgrade the ATK of the tower at this place.",
+        "RangeUp": "A NumPy Array of shape (length, length) and dtype=np.int32. It represents whether to upgrade the attack range of the tower at this place.",
+        "Destruct": "A NumPy Array of shape (length, length) and dtype=np.int32. It represents whether to destruct the tower at this place. Destruction will return some costs spent on this tower."
     }
     ```
     The four actions are processed in order, which means you could build a tower and upgrade it and then destruct it in a single action, but you could not upgrade the same property twice in a single action.
@@ -104,3 +104,10 @@ Using the commands following could automatically install this package.
 cd gym-TD
 python setup.py install
 ```
+
+## Demo
+```
+cd gym-TD
+python test.py
+```
+You could also use `python test.py -r` to see a random game.

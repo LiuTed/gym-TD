@@ -16,10 +16,10 @@ class TDSingle(gym.Env):
     def __init__(self, map_size):
         super(TDSingle, self).__init__()
         self.action_space = spaces.Dict({
-            "Build": spaces.Box(low=0, high=1, shape=(map_size, map_size), dtype=np.bool),
-            "ATKUp": spaces.Box(low=0, high=1, shape=(map_size, map_size), dtype=np.bool),
-            "RangeUp": spaces.Box(low=0, high=1, shape=(map_size, map_size), dtype=np.bool),
-            "Destruct": spaces.Box(low=0, high=1, shape=(map_size, map_size), dtype=np.bool)
+            "Build": spaces.Box(low=0, high=1, shape=(map_size, map_size), dtype=np.int32),
+            "ATKUp": spaces.Box(low=0, high=1, shape=(map_size, map_size), dtype=np.int32),
+            "RangeUp": spaces.Box(low=0, high=1, shape=(map_size, map_size), dtype=np.int32),
+            "Destruct": spaces.Box(low=0, high=1, shape=(map_size, map_size), dtype=np.int32)
         })
         self.observation_space = spaces.Dict({
             "Map": spaces.Box(low=0., high=1., shape=(map_size, map_size, 9), dtype=np.float32),
@@ -39,13 +39,13 @@ class TDSingle(gym.Env):
 
         for r in range(self.__board.map_size):
             for c in range(self.__board.map_size):
-                if action["Build"][r][c]:
+                if action["Build"][r][c] == 1:
                     self.__board.tower_build([r,c])
-                if action["ATKUp"][r][c]:
+                if action["ATKUp"][r][c] == 1:
                     self.__board.tower_atkup([r,c])
-                if action["RangeUp"][r][c]:
+                if action["RangeUp"][r][c] == 1:
                     self.__board.tower_rangeup([r,c])
-                if action["Destruct"][r][c]:
+                if action["Destruct"][r][c] == 1:
                     self.__board.tower_destruct([r,c])
         reward = self.__board.step()
         done = self.__board.steps < 500
@@ -73,6 +73,11 @@ class TDSingle(gym.Env):
         self.__board.step()
     def empty_step(self):
         self.__board.step()
+    def random_enemy(self):
+        t = self.np_random.randint(0, 4)
+        if t == 3:
+            return
+        self.__board.summon_enemy(t)
 
     def render(self, mode="human"):
         return self.__board.render(mode)

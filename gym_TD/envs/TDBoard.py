@@ -229,6 +229,7 @@ class TDBoard(object):
                 if e.loc == self.end:
                     reward -= config.penalty_leak
                     toremove.append(e)
+                    break
         for e in toremove:
             self.enemies.remove(e)
         

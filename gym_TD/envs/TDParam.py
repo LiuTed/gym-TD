@@ -23,8 +23,8 @@ class Config(object):
         self.tower_ATKUp_cost = [5, 5]
 
         self.tower_basic_range = 4
-        self.tower_rangeUp_List = [2, 2]
-        self.tower_rangeUp_Cost = [3, 3]
+        self.tower_rangeUp_list = [2, 2]
+        self.tower_rangeUp_cost = [3, 3]
 
         self.reward_kill = 0.1
         self.penalty_leak = 1.
