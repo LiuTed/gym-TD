@@ -152,6 +152,6 @@ python setup.py install
 ## Demo
 ```
 cd gym-TD
-python test.py
+python demo.py
 ```
-You could also use `python test.py -[adm]` to see a random game. (Use `python test.py -h` for details)
+You could also use `python demo.py -[adm]` to see a random game. (Use `python demo.py -h` for details)
