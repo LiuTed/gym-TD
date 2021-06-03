@@ -47,6 +47,9 @@ class TDSingle(gym.Env):
                     self.__board.tower_rangeup([r,c])
                 if action["Destruct"][r][c] == 1:
                     self.__board.tower_destruct([r,c])
+                    
+        self.random_enemy()
+        
         reward = self.__board.step()
         done = self.__board.steps >= 500
         states = {

@@ -101,33 +101,10 @@ You could control both the defender and attacker.
     The reward that `step` returns is same as the reward that the defender gets. The reward for the attacker is the opposite of the reward for the defender.
 
 ### Config
-You could config lots of parameters of this game with the function `paramConfig(**kwargs)`. You should config these parameters before making an environment. The description and default values are shown below:
-- `enemy_balance_LP`: 10
-- `enemy_balance_speed`: 2
-- `enemy_balance_cost`: 3
-- `enemy_strong_LP`: 20
-- `enemy_strong_speed`: 1
-- `enemy_strong_cost`: 3
-- `enemy_fast_LP`: 5
-- `enemy_fast_speed`: 4
-- `enemy_fast_cost`: 3
-- `attacker_init_cost`: 10
-- `defender_init_cost`: 5
-- `max_cost`: The upper limit of costs. Default is 50
-- `tower_basic_cost`: 5
-- `tower_destruct_return`: The ratio of return costs. Default is 0.5.
-- `tower_basic_ATK`: 5
-- `tower_ATKUp_list`: A list of the differences of ATK between levels. Default is [5, 5]
-- `tower_ATKUp_cost`: A list of the costs of ATK upgrade. Default is [5, 5]
-- `tower_basic_range`: 4
-- `tower_rangeUp_list`: A list of the differences of attack range between levels. Default is [2, 2]
-- `tower_rangeUp_cost`: A list of the costs of attack range upgrade. Default is [3, 3]
-- `reward_kill`: Reward of killing an enemy. Default is 0.1
-- `penalty_leak`: Penalty of leaking an enemy. (Enemy enters the base point). Default is 1.
-- `reward_time`: Reward of each step. Default is 0.001
+You could config lots of parameters of this game with the function `paramConfig(**kwargs)` to customize your environment. For example, if you want to set the variable `max_cost=100`, all you need is to simply execute `paramConfig(max_cost=100)` before making the environment. You should config parameters before making an environment. You could read [gym_TD/envs/README.md](gym_TD/envs/README.md) for detailed descriptions.
 
 ### End condition
-This game will run continuously until reaching 500 steps.
+This game will run continuously until reaching 500 steps. Although you could run even after 500 steps without error, you are not supposed to do so.
 
 ### Versions
 - TD-def-small-v0: Control the defender. Map size = (10, 10)
@@ -149,9 +126,18 @@ cd gym-TD
 python setup.py install
 ```
 
+Or you could simply use the following commands to install the prerequisites.
+```
+cd gym-TD
+python -m pip install -r requirements.txt
+```
+
 ## Demo
 ```
 cd gym-TD
 python demo.py
 ```
 You could also use `python demo.py -[adm]` to see a random game. (Use `python demo.py -h` for details)
+
+## Training
+You could use gym-TD just like use other OpenAI Gym environments like cartpole. You could go [OpenAI Gym](https://github.com/openai/gym) for example codes and documents.

@@ -24,7 +24,6 @@ def play_atk():
     env.render()
     while True:
         sleep(1)
-        env.random_tower()
         env.step(env.action_space.sample())
         env.render()
 
@@ -34,7 +33,6 @@ def play_def():
     env.render()
     while True:
         sleep(1)
-        env.random_enemy()
         env.step(env.action_space.sample())
         env.render()
 

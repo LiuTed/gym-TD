@@ -35,6 +35,8 @@ class TDAttack(gym.Env):
         for i in range(3):
             if action[i] == 1:
                 self.__board.summon_enemy(i)
+        
+        self.random_tower()
 
         reward = -self.__board.step()
         done = self.__board.steps >= 500
