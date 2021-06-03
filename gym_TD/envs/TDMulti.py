@@ -7,23 +7,27 @@ from gym_TD.envs.TDBoard import TDBoard
 
 import numpy as np
 
-class TDSingle(gym.Env):
+class TDMulti(gym.Env):
     metadata = {
         "render.modes": ['human', 'rgb_array'],
         'video.frams_per_second': 10
     }
 
     def __init__(self, map_size):
-        super(TDSingle, self).__init__()
+        super(TDMulti, self).__init__()
         self.action_space = spaces.Dict({
-            "Build": spaces.Box(low=0, high=1, shape=(map_size, map_size), dtype=np.int32),
-            "ATKUp": spaces.Box(low=0, high=1, shape=(map_size, map_size), dtype=np.int32),
-            "RangeUp": spaces.Box(low=0, high=1, shape=(map_size, map_size), dtype=np.int32),
-            "Destruct": spaces.Box(low=0, high=1, shape=(map_size, map_size), dtype=np.int32)
+            "Attacker": spaces.MultiBinary(3),
+            "Defender": spaces.Dict({
+                "Build": spaces.Box(low=0, high=1, shape=(map_size, map_size), dtype=np.int32),
+                "ATKUp": spaces.Box(low=0, high=1, shape=(map_size, map_size), dtype=np.int32),
+                "RangeUp": spaces.Box(low=0, high=1, shape=(map_size, map_size), dtype=np.int32),
+                "Destruct": spaces.Box(low=0, high=1, shape=(map_size, map_size), dtype=np.int32)
+            })
         })
         self.observation_space = spaces.Dict({
             "Map": spaces.Box(low=0., high=1., shape=(map_size, map_size, 9), dtype=np.float32),
-            "Cost": spaces.Discrete(config.max_cost)
+            "Cost_Attacker": spaces.Discrete(config.max_cost),
+            "Cost_Defender": spaces.Discrete(config.max_cost)
         })
         self.map_size = map_size
         self.seed()
@@ -37,21 +41,26 @@ class TDSingle(gym.Env):
         err_msg = "%r (%s) invalid" % (action, type(action))
         assert self.action_space.contains(action), err_msg
 
+        for i in range(3):
+            if action["Attacker"][i] == 1:
+                self.__board.summon_enemy(i)
+        def_act = action["Defender"]
         for r in range(self.__board.map_size):
             for c in range(self.__board.map_size):
-                if action["Build"][r][c] == 1:
+                if def_act["Build"][r][c] == 1:
                     self.__board.tower_build([r,c])
-                if action["ATKUp"][r][c] == 1:
+                if def_act["ATKUp"][r][c] == 1:
                     self.__board.tower_atkup([r,c])
-                if action["RangeUp"][r][c] == 1:
+                if def_act["RangeUp"][r][c] == 1:
                     self.__board.tower_rangeup([r,c])
-                if action["Destruct"][r][c] == 1:
+                if def_act["Destruct"][r][c] == 1:
                     self.__board.tower_destruct([r,c])
         reward = self.__board.step()
         done = self.__board.steps >= 500
         states = {
             "Map": self.__board.get_states(),
-            "Cost": self.__board.cost_def
+            "Cost_Defender": self.__board.cost_def,
+            "Cost_Attacker": self.__board.cost_atk
         }
         return states, reward, done, None
 
@@ -80,14 +89,19 @@ class TDSingle(gym.Env):
         done = self.__board.steps >= 500
         states = {
             "Map": self.__board.get_states(),
-            "Cost": self.__board.cost_def
+            "Cost_Defender": self.__board.cost_def,
+            "Cost_Attacker": self.__board.cost_atk
         }
         return states, reward, done, None
+    
     def random_enemy(self):
         t = self.np_random.randint(0, 4)
         if t == 3:
             return
         self.__board.summon_enemy(t)
+    def random_tower(self):
+        r, c = self.np_random.randint(0, self.map_size, 2)
+        self.__board.tower_build([r,c])
 
     def render(self, mode="human"):
         return self.__board.render(mode)

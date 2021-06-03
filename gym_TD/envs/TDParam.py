@@ -14,6 +14,7 @@ class Config(object):
 
         self.attacker_init_cost = 10
         self.defender_init_cost = 5
+        self.max_cost = 50
 
         self.tower_basic_cost = 5
         self.tower_destruct_return = 0.5

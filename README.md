@@ -61,7 +61,44 @@ Defender is the player in most other TD games. Your goal is to build and upgrade
     **Note**: The illegal actions will be ignored.
 
 ### Attacker
-In development.
+Your goal is to summon the enemies with some strategy so that as many enemies (creepers) could reach the base point as possible.
+- Observation space:
+    Same as defender.
+
+- Action space:
+    A list of len = 3, the element of which should be either 0 or 1.
+    Each represents whether summon this type of creeper. (1 for True)
+
+### Multi-player
+You could control both the defender and attacker.
+- Observation space:
+    A Python dict of this form:
+    ```
+    {
+        "Map": "A NumPy Array of shape (length, length, 9) and dtype=np.float32.",
+        "Cost_Attacker": "The cost that the attacker has. It is a integer in [0, max_cost].",
+        "Cost_Defender": "The cost that the defender has. It is a integer in [0, max_cost].",
+    }
+    ```
+    Channels same as above.
+
+- Action space:
+    A Python dict of this form:
+    ```
+    {
+        "Attacker": "A list of len = 3, same as attacker's action space"
+        "Defender":
+        {
+            "Build": "A NumPy Array of shape (length, length) and dtype=np.int32. It represents whether to build a tower at this place. (1 for True)",
+            "ATKUp": "A NumPy Array of shape (length, length) and dtype=np.int32. It represents whether to upgrade the ATK of the tower at this place.",
+            "RangeUp": "A NumPy Array of shape (length, length) and dtype=np.int32. It represents whether to upgrade the attack range of the tower at this place.",
+            "Destruct": "A NumPy Array of shape (length, length) and dtype=np.int32. It represents whether to destruct the tower at this place. Destruction will return some costs spent on this tower."
+        }
+    }
+    ```
+
+- Reward:
+    The reward that `step` returns is same as the reward that the defender gets. The reward for the attacker is the opposite of the reward for the defender.
 
 ### Config
 You could config lots of parameters of this game with the function `paramConfig(**kwargs)`. You should config these parameters before making an environment. The description and default values are shown below:
@@ -76,14 +113,15 @@ You could config lots of parameters of this game with the function `paramConfig(
 - `enemy_fast_cost`: 3
 - `attacker_init_cost`: 10
 - `defender_init_cost`: 5
+- `max_cost`: The upper limit of costs. Default is 50
 - `tower_basic_cost`: 5
 - `tower_destruct_return`: The ratio of return costs. Default is 0.5.
 - `tower_basic_ATK`: 5
 - `tower_ATKUp_list`: A list of the differences of ATK between levels. Default is [5, 5]
 - `tower_ATKUp_cost`: A list of the costs of ATK upgrade. Default is [5, 5]
 - `tower_basic_range`: 4
-- `tower_rangeUp_List`: A list of the differences of attack range between levels. Default is [2, 2]
-- `tower_rangeUp_Cost`: A list of the costs of attack range upgrade. Default is [3, 3]
+- `tower_rangeUp_list`: A list of the differences of attack range between levels. Default is [2, 2]
+- `tower_rangeUp_cost`: A list of the costs of attack range upgrade. Default is [3, 3]
 - `reward_kill`: Reward of killing an enemy. Default is 0.1
 - `penalty_leak`: Penalty of leaking an enemy. (Enemy enters the base point). Default is 1.
 - `reward_time`: Reward of each step. Default is 0.001
@@ -92,9 +130,15 @@ You could config lots of parameters of this game with the function `paramConfig(
 This game will run continuously until reaching 500 steps.
 
 ### Versions
-- TD-def-small-v0: Map size = (10, 10)
-- TD-def-middle-v0: Map size = (20, 20)
-- TD-def-large-v0: Map size = (30, 30)
+- TD-def-small-v0: Control the defender. Map size = (10, 10)
+- TD-def-middle-v0: Control the defender. Map size = (20, 20)
+- TD-def-large-v0: Control the defender. Map size = (30, 30)
+- TD-atk-small-v0: Control the attacker. Map size = (10, 10)
+- TD-atk-middle-v0: Control the attacker. Map size = (20, 20)
+- TD-atk-large-v0: Control the attacker. Map size = (30, 30)
+- TD-2p-small-v0: Control both sides. Map size = (10, 10)
+- TD-2p-middle-v0: Control both sides. Map size = (20, 20)
+- TD-2p-large-v0: Control both sides. Map size = (30, 30)
 
 ## Installation
 It should work on Python3. It only requires gym and numpy.
@@ -110,4 +154,4 @@ python setup.py install
 cd gym-TD
 python test.py
 ```
-You could also use `python test.py -r` to see a random game.
+You could also use `python test.py -[adm]` to see a random game. (Use `python test.py -h` for details)
