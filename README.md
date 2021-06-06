@@ -104,7 +104,7 @@ You could control both the defender and attacker.
 You could config lots of parameters of this game with the function `paramConfig(**kwargs)` to customize your environment. For example, if you want to set the variable `max_cost=100`, all you need is to simply execute `paramConfig(max_cost=100)` before making the environment. You should config parameters before making an environment. You could read [gym_TD/envs/README.md](gym_TD/envs/README.md) for detailed descriptions.
 
 ### End condition
-This game will run continuously until reaching 500 steps. Although you could run even after 500 steps without error, you are not supposed to do so.
+This game will run continuously until reaching 200 steps, or `base_LP` enemies have been leaked (`base_LP=None` means do not end due to leakage). Although you could run even after 200 steps without error, you are not supposed to do so.
 
 ### Versions
 - TD-def-small-v0: Control the defender. Map size = (10, 10)

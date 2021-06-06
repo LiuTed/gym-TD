@@ -13,17 +13,18 @@ class Config(object):
         self.enemy_fast_cost = 3
 
         self.attacker_init_cost = 10
-        self.defender_init_cost = 5
+        self.defender_init_cost = 10
+        self.base_LP = 10
         self.max_cost = 50
 
-        self.tower_basic_cost = 5
+        self.tower_basic_cost = 10
         self.tower_destruct_return = 0.5
 
         self.tower_basic_ATK = 5
         self.tower_ATKUp_list = [5, 5]
         self.tower_ATKUp_cost = [5, 5]
 
-        self.tower_basic_range = 4
+        self.tower_basic_range = 3
         self.tower_rangeUp_list = [2, 2]
         self.tower_rangeUp_cost = [3, 3]
 

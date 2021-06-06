@@ -18,6 +18,7 @@ Here stores all the parameters that could be modified. Some descriptions and the
 - `enemy_fast_cost`: 3
 - `attacker_init_cost`: 10
 - `defender_init_cost`: 5
+- `base_LP`: How many enemies can be leaked. Set to `None` means never ends because of leakage. Default is 10
 - `max_cost`: The upper limit of costs. Default is 50
 - `tower_basic_cost`: 5
 - `tower_destruct_return`: The ratio of return costs. Default is 0.5.

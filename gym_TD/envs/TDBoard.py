@@ -1,5 +1,6 @@
 import numpy as np
 
+from gym import logger
 from gym.utils import seeding
 from gym.envs.classic_control import rendering
 from gym_TD.envs.TDParam import config
@@ -95,7 +96,7 @@ class TDBoard(object):
         "enemy1LP": 7,
         "enemy2LP": 8
     }
-    def __init__(self, map_size, np_random, cost_def, cost_atk, max_cost):
+    def __init__(self, map_size, np_random, cost_def, cost_atk, max_cost, base_LP):
         self.map_size = map_size
         start_edge = np_random.randint(low=0, high=4) #start point at which edge
         start_idx = np_random.randint(low=0, high=map_size-1) #location of start point
@@ -110,7 +111,7 @@ class TDBoard(object):
         self.end = idx2point[3-start_edge](end_idx)
         # end point at the other side of start point
 
-        self.map = np.empty(shape=(map_size, map_size, 2), dtype=np.int32)
+        self.map = np.zeros(shape=(map_size, map_size, 2), dtype=np.int32)
         # if road, dist to endpoint
         road = self.create_road(np_random)
         dist = 0
@@ -118,12 +119,15 @@ class TDBoard(object):
             self.map[p[0], p[1]][0] = 1
             self.map[p[0], p[1]][1] = dist
             dist += 1
+        
+        logger.debug('Map: ' + str(self.map))
 
         self.enemies = []
         self.towers = []
         self.cost_def = cost_def
         self.cost_atk = cost_atk
         self.max_cost = max_cost
+        self.base_LP = base_LP
 
         self.viewer = None
 
@@ -149,6 +153,7 @@ class TDBoard(object):
         e = _create_enemy(t, self.start)
         if self.cost_atk < e.cost:
             return
+        logger.debug('Summon enemy {}'.format(t))
         self.enemies.append(e)
         self.cost_atk -= e.cost
     def tower_build(self, loc):
@@ -157,6 +162,7 @@ class TDBoard(object):
             return
         if self.map[loc[0], loc[1], 0] == 1:
             return
+        logger.debug('Build tower ({},{})'.format(loc[0], loc[1]))
         self.towers.append(t)
         self.cost_def -= t.cost
     def tower_atkup(self, loc):
@@ -168,6 +174,7 @@ class TDBoard(object):
                 atkup = config.tower_ATKUp_list[t.atklv]
                 if self.cost_def < cost:
                     break
+                logger.debug('Tower ATK up ({},{})'.format(loc[0], loc[1]))
                 self.cost_def -= cost
                 t.atkUp(atkup, cost)
                 break
@@ -180,6 +187,7 @@ class TDBoard(object):
                 rangeup = config.tower_rangeUp_list[t.rangelv]
                 if self.cost_def < cost:
                     break
+                logger.debug('Tower range up ({},{})'.format(loc[0], loc[1]))
                 self.cost_def -= cost
                 t.rangeUp(rangeup, cost)
                 break
@@ -188,6 +196,7 @@ class TDBoard(object):
             if loc == t.loc:
                 self.cost_def += int(t.cost * config.tower_destruct_return)
                 self.towers.remove(t)
+                logger.debug('Destruct tower ({},{})'.format(loc[0], loc[1]))
                 break
     
     def step(self):
@@ -198,6 +207,7 @@ class TDBoard(object):
         reward = 0.
         reward += config.reward_time
         self.steps += 1
+        logger.debug('Step: {}->{}'.format(self.steps-1, self.steps))
         for t in self.towers:
             attackable = []
             for e in self.enemies:
@@ -207,7 +217,9 @@ class TDBoard(object):
             if len(attackable) > 0:
                 e = attackable[0]
                 e.damage(t.atk)
+                logger.debug('Attack: ({},{})->({},{},{})'.format(t.loc[0], t.loc[1], e.loc[0], e.loc[1], e.type))
                 if not e.alive:
+                    logger.debug('Kill')
                     self.enemies.remove(e)
                     reward += config.reward_kill
         dp = [[0,1], [0,-1], [1,0], [-1,0]]
@@ -228,14 +240,22 @@ class TDBoard(object):
                         break
                 if e.loc == self.end:
                     reward -= config.penalty_leak
+                    logger.debug('Leak {}'.format(e.type))
                     toremove.append(e)
+                    if self.base_LP is not None:
+                        self.base_LP -= 1
+                        self.base_LP = max(self.base_LP, 0)
                     break
         for e in toremove:
             self.enemies.remove(e)
         
         self.cost_atk = min(self.cost_atk+1, self.max_cost)
         self.cost_def = min(self.cost_def+1, self.max_cost)
+        logger.debug('Reward: {}'.format(reward))
         return reward
+    
+    def done(self):
+        return self.base_LP <= 0
 
     def create_road(self, np_random):
         # Return a random list of points from end point to start point.
@@ -246,7 +266,7 @@ class TDBoard(object):
                 self.prev = prev
         _dp = [[0,1], [0,-1], [1,0], [-1,0]]
 
-        self.height = np_random.randint(low=1, high=100, size=(self.map_size, self.map_size))
+        height = np_random.randint(low=1, high=100, size=(self.map_size, self.map_size))
         # height map, used for create actual map
 
         dist = np.full((self.map_size, self.map_size), 101*self.map_size*self.map_size)
@@ -268,10 +288,10 @@ class TDBoard(object):
                     continue # out of range
                 if p.dist != dist[p.pos[0], p.pos[1]]: #updated
                     continue
-                if p.dist + self.height[cord[0], cord[1]] \
+                if p.dist + height[cord[0], cord[1]] \
                      < dist[cord[0], cord[1]]:
                     dist[cord[0], cord[1]] = \
-                        p.dist + self.height[cord[0], cord[1]]
+                        p.dist + height[cord[0], cord[1]]
                     queue.append(Point(cord, dist[cord[0], cord[1]], p))
                     queue.sort(key=lambda p: p.dist) #Dijkstra
         p = queue[0]

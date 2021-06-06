@@ -10,7 +10,7 @@ import numpy as np
 class TDSingle(gym.Env):
     metadata = {
         "render.modes": ['human', 'rgb_array'],
-        'video.frams_per_second': 10
+        'video.frames_per_second': 10
     }
 
     def __init__(self, map_size):
@@ -26,6 +26,7 @@ class TDSingle(gym.Env):
             "Cost": spaces.Discrete(config.max_cost)
         })
         self.map_size = map_size
+        self.__board = None
         self.seed()
         self.reset()
 
@@ -51,20 +52,23 @@ class TDSingle(gym.Env):
         self.random_enemy()
         
         reward = self.__board.step()
-        done = self.__board.steps >= 500
+        done = self.__board.steps >= 200 or self.__board.done()
         states = {
             "Map": self.__board.get_states(),
             "Cost": self.__board.cost_def
         }
-        return states, reward, done, None
+        return states, reward, done, {}
 
     def reset(self):
+        if self.__board is not None:
+            self.__board.close()
         self.__board = TDBoard(
             self.map_size,
             self.np_random,
             config.defender_init_cost,
             config.attacker_init_cost,
-            config.max_cost
+            config.max_cost,
+            config.base_LP
         )
         states = {
             "Map": self.__board.get_states(),
@@ -80,12 +84,12 @@ class TDSingle(gym.Env):
         self.__board.step()
     def empty_step(self):
         reward = self.__board.step()
-        done = self.__board.steps >= 500
+        done = self.__board.steps >= 200 or self.__board.done()
         states = {
             "Map": self.__board.get_states(),
             "Cost": self.__board.cost_def
         }
-        return states, reward, done, None
+        return states, reward, done, {}
     def random_enemy(self):
         t = self.np_random.randint(0, 4)
         if t == 3:
