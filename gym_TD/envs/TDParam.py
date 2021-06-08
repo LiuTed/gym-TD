@@ -32,9 +32,17 @@ class Config(object):
         self.penalty_leak = 1.
         self.reward_time = 0.001
 
-
 config = Config()
 
 def paramConfig(**kwargs):
     for key, val in kwargs.items():
         setattr(config, key, val)
+
+class HyperParameters(object):
+    def __init__(self):
+        super(HyperParameters, self).__setattr__('max_episode_steps', 200)
+        super(HyperParameters, self).__setattr__('video_frames_per_second', 10)
+    def __setattr__(self, name, value) -> None:
+        raise RuntimeError('You are not supposed to modify hyper parameters during runtime.')
+
+hyper_parameters = HyperParameters()

@@ -3,7 +3,7 @@ import numpy as np
 from gym import logger
 from gym.utils import seeding
 from gym.envs.classic_control import rendering
-from gym_TD.envs.TDParam import config
+from gym_TD.envs.TDParam import config, hyper_parameters
 
 class Enemy(object):
     def __init__(self, maxLP, speed, cost, loc, t=None):
@@ -11,6 +11,7 @@ class Enemy(object):
         self.speed = speed
         self.cost = cost
         self.loc = loc
+        self.margin = 0.
         self.type = t
     
     def setLoc(self, newLoc):
@@ -92,10 +93,14 @@ class TDBoard(object):
         "tower": 3,
         "atklv": 4,
         "rangelv": 5,
-        "enemy0LP": 6,
-        "enemy1LP": 7,
-        "enemy2LP": 8
+        "enemyLP0": 6,
+        "enemyLP1": 7,
+        "enemyLP2": 8,
+        "enemyMargin0": 9,
+        "enemyMargin1": 10,
+        "enemyMargin2": 11
     }
+
     def __init__(self, map_size, np_random, cost_def, cost_atk, max_cost, base_LP):
         self.map_size = map_size
         start_edge = np_random.randint(low=0, high=4) #start point at which edge
@@ -134,19 +139,17 @@ class TDBoard(object):
         self.steps = 0
     
     def get_states(self):
-        s = np.zeros(shape=(self.map_size, self.map_size, 9), dtype=np.float32)
-        for r in range(self.map_size):
-            for c in range(self.map_size):
-                if self.map[r,c,0] == 1:
-                    s[r,c,0] = 1
-        s[self.start[0], self.start[1]][1] = 1
-        s[self.end[0], self.end[1]][2] = 1
+        s = np.zeros(shape=(self.map_size, self.map_size, len(self.channels)), dtype=np.float32)
+        s[:,:,0] = self.map[:,:,0]
+        s[self.start[0], self.start[1], self.channels['start']] = 1
+        s[self.end[0], self.end[1], self.channels['end']] = 1
         for t in self.towers:
-            s[t.loc[0], t.loc[1]][3] = 1
-            s[t.loc[0], t.loc[1]][4] = t.atklv
-            s[t.loc[0], t.loc[1]][5] = t.rangelv
+            s[t.loc[0], t.loc[1], self.channels['tower']] = 1
+            s[t.loc[0], t.loc[1], self.channels['atklv']] = t.atklv
+            s[t.loc[0], t.loc[1], self.channels['rangelv']] = t.rangelv
         for e in self.enemies:
-            s[e.loc[0], e.loc[1]][e.type+6] = e.LP/e.maxLP
+            s[e.loc[0], e.loc[1], e.type+6] = e.LP/e.maxLP
+            s[e.loc[0], e.loc[1], e.type+9] = e.margin
         return s
     
     def summon_enemy(self, t):
@@ -225,7 +228,9 @@ class TDBoard(object):
         dp = [[0,1], [0,-1], [1,0], [-1,0]]
         toremove = []
         for e in self.enemies:
-            for _ in range(e.speed):
+            e.margin += e.speed
+            while e.margin >= 1.:
+                e.margin -= 1.
                 d = self.map[e.loc[0], e.loc[1], 1]
                 for i in range(4):
                     p = [
@@ -255,7 +260,8 @@ class TDBoard(object):
         return reward
     
     def done(self):
-        return self.base_LP <= 0
+        return self.base_LP <= 0 \
+            or self.steps >= hyper_parameters.max_episode_steps
 
     def create_road(self, np_random):
         # Return a random list of points from end point to start point.

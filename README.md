@@ -31,7 +31,7 @@ Defender is the player in most other TD games. Your goal is to build and upgrade
     A Python dict of this form:
     ```
     {
-        "Map": "A NumPy Array of shape (length, length, 9) and dtype=np.float32.",
+        "Map": "A NumPy Array of shape (length, length, 12) and dtype=np.float32.",
         "Cost": "The cost you have. It is a integer in [0, max_cost]."
     }
     ```
@@ -45,6 +45,9 @@ Defender is the player in most other TD games. Your goal is to build and upgrade
     - 6: The LP (life point) ratio of EnemyBalance in this block.
     - 7: The LP ratio of EnemyStrong in this block.
     - 8: The LP ratio of EnemyFast in this block.
+    - 9: The distance that EnemyBalance has passed in this block.
+    - 10: The distance that EnemyStrong has passed in this block.
+    - 11: The distance that EnemyFast has passed in this block.
 
 - Action space:
     A Python dict of this form:
@@ -75,7 +78,7 @@ You could control both the defender and attacker.
     A Python dict of this form:
     ```
     {
-        "Map": "A NumPy Array of shape (length, length, 9) and dtype=np.float32.",
+        "Map": "A NumPy Array of shape (length, length, 12) and dtype=np.float32.",
         "Cost_Attacker": "The cost that the attacker has. It is a integer in [0, max_cost].",
         "Cost_Defender": "The cost that the defender has. It is a integer in [0, max_cost].",
     }
@@ -116,6 +119,10 @@ This game will run continuously until reaching 200 steps, or `base_LP` enemies h
 - TD-2p-small-v0: Control both sides. Map size = (10, 10)
 - TD-2p-middle-v0: Control both sides. Map size = (20, 20)
 - TD-2p-large-v0: Control both sides. Map size = (30, 30)
+----
+- TD-def-v0: Control the defender. You should pass the parameter `map_size=n` when making the environment, to set the map size to (n, n)
+- TD-atk-v0: Control the attacker. You should pass the parameter `map_size=n` when making the environment, to set the map size to (n, n)
+- TD-2p-v0: Control both sides. You should pass the parameter `map_size=n` when making the environment, to set the map size to (n, n)
 
 ## Installation
 It should work on Python3. It only requires gym and numpy.

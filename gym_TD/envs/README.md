@@ -6,7 +6,7 @@ Here is the implementation of gym-TD. Hope this document could help you read the
 
 ## TDParam
 
-Here stores all the parameters that could be modified. Some descriptions and the default values of initial parameters are shown below:
+`config` stores all the parameters that could be modified. Some descriptions and the default values of initial parameters are shown below:
 - `enemy_balance_LP`: 10
 - `enemy_balance_speed`: 2
 - `enemy_balance_cost`: 3
@@ -35,6 +35,8 @@ Here stores all the parameters that could be modified. Some descriptions and the
 
 To change the values, you are supposed to use the function `paramConfig()` like `paramConfig(xxx=abc)`, instead of directly assigning values like `config.xxx=abc`.
 
+`hyper_parameters` stores all the parameters that should not be changed during running, like the maximum steps of each episode (`max_episode_steps`), or the rendering frame rate (`video_frames_per_second`). These values are used in the definition of classes and methods, which means even if you changed them, there will not be any effects. If needed, you can directly change them in `HyperParameters.__init__()`.
+
 ## TDBoard
 
 This file implements the basic rules of TD game. It contains the following parts:
@@ -48,6 +50,7 @@ Enemy is what will follow the road from the start point to the base point. It wi
 - speed: How many blocks it could pass in one step.
 - cost: How much costs needed to be consumed when summoning. This variable is only used for simplify the implementation.
 - loc: The current location of this enemy.
+- margin: [0,1), indicate how far has it passed in this grid block.
 - type: Which type this enemy is.
 
 Three types of enemy are implemented.
@@ -87,7 +90,7 @@ TDBoard implements the basic rules of TD game, including map generation, interac
         - Cause damage.
         - Remove the enemy and record reward if killed.
     - For each living enemy:
-        - Move `speed` steps towards the base point.
+        - Move `speed` blocks towards the base point.
         - Remove the enemy and record penalty if reached the base point.
     - Increase the costs.
 

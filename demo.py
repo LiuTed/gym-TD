@@ -52,7 +52,7 @@ def play_2p():
         env.render()
 
 def test():
-    env = gym.make('TD-2p-middle-v0')
+    env = gym.make('TD-2p-v0', map_size=21)
     logger.set_level(logger.DEBUG)
     env = wrappers.Monitor(env, directory='/tmp/gym_TD', force=True)
     for __ in range(17):

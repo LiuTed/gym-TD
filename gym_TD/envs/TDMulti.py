@@ -2,7 +2,7 @@ import gym
 from gym import spaces, utils
 from gym.utils import seeding
 
-from gym_TD.envs.TDParam import config
+from gym_TD.envs.TDParam import config, hyper_parameters
 from gym_TD.envs.TDBoard import TDBoard
 
 import numpy as np
@@ -10,7 +10,7 @@ import numpy as np
 class TDMulti(gym.Env):
     metadata = {
         "render.modes": ['human', 'rgb_array'],
-        'video.frames_per_second': 10
+        'video.frames_per_second': hyper_parameters.video_frames_per_second
     }
 
     def __init__(self, map_size):
@@ -25,7 +25,7 @@ class TDMulti(gym.Env):
             })
         })
         self.observation_space = spaces.Dict({
-            "Map": spaces.Box(low=0., high=1., shape=(map_size, map_size, 9), dtype=np.float32),
+            "Map": spaces.Box(low=0., high=1., shape=(map_size, map_size, len(TDBoard.channels)), dtype=np.float32),
             "Cost_Attacker": spaces.Discrete(config.max_cost),
             "Cost_Defender": spaces.Discrete(config.max_cost)
         })
@@ -57,7 +57,7 @@ class TDMulti(gym.Env):
                 if def_act["Destruct"][r][c] == 1:
                     self.__board.tower_destruct([r,c])
         reward = self.__board.step()
-        done = self.__board.steps >= 200 or self.__board.done()
+        done = self.__board.done()
         states = {
             "Map": self.__board.get_states(),
             "Cost_Defender": self.__board.cost_def,
@@ -91,7 +91,7 @@ class TDMulti(gym.Env):
         self.__board.step()
     def empty_step(self):
         reward = self.__board.step()
-        done = self.__board.steps >= 200 or self.__board.done()
+        done = self.__board.done()
         states = {
             "Map": self.__board.get_states(),
             "Cost_Defender": self.__board.cost_def,
