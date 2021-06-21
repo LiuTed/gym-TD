@@ -1,15 +1,15 @@
 class Config(object):
     def __init__(self):
         self.enemy_balance_LP = 10
-        self.enemy_balance_speed = 2
+        self.enemy_balance_speed = 0.2
         self.enemy_balance_cost = 3
 
         self.enemy_strong_LP = 20
-        self.enemy_strong_speed = 1
+        self.enemy_strong_speed = 0.1
         self.enemy_strong_cost = 3
 
         self.enemy_fast_LP = 5
-        self.enemy_fast_speed = 4
+        self.enemy_fast_speed = 0.4
         self.enemy_fast_cost = 3
 
         self.attacker_init_cost = 10
@@ -32,17 +32,27 @@ class Config(object):
         self.penalty_leak = 1.
         self.reward_time = 0.001
 
+        self.allow_multiple_action = False
+
+        self.tower_attack_interval = 5
+        self.attacker_action_interval = 1
+        self.defender_action_interval = 1
+
 config = Config()
 
 def paramConfig(**kwargs):
     for key, val in kwargs.items():
         setattr(config, key, val)
 
+def getConfig():
+    return config.__dict__
+
 class HyperParameters(object):
     def __init__(self):
         super(HyperParameters, self).__setattr__('max_episode_steps', 200)
-        super(HyperParameters, self).__setattr__('video_frames_per_second', 10)
-    def __setattr__(self, name, value) -> None:
+        super(HyperParameters, self).__setattr__('video_frames_per_second', 50)
+        super(HyperParameters, self).__setattr__('enemy_overlay_limit', 20)
+    def __setattr__(self, name: str, value) -> None:
         raise RuntimeError('You are not supposed to modify hyper parameters during runtime.')
 
 hyper_parameters = HyperParameters()

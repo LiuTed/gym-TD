@@ -16,14 +16,14 @@ class TDAttack(gym.Env):
     def __init__(self, map_size):
         super(TDAttack, self).__init__()
         self.action_space = spaces.MultiBinary(3)
-        self.observation_space = spaces.Dict({
-            "Map": spaces.Box(low=0., high=1., shape=(map_size, map_size, len(TDBoard.channels)), dtype=np.float32),
-            "Cost": spaces.Discrete(config.max_cost)
-        })
+        self.observation_space = \
+            spaces.Box(low=0., high=2., shape=(map_size, map_size, TDBoard.n_channels()), dtype=np.float32)
         self.map_size = map_size
         self.__board = None
         self.seed()
         self.reset()
+        self.attacker_cd = 0
+        self.defender_cd = 0
 
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
@@ -33,18 +33,22 @@ class TDAttack(gym.Env):
         err_msg = "%r (%s) invalid" % (action, type(action))
         assert self.action_space.contains(action), err_msg
 
-        for i in range(3):
-            if action[i] == 1:
-                self.__board.summon_enemy(i)
+        self.attacker_cd = max(self.attacker_cd-1, 0)
+        self.defender_cd = max(self.defender_cd-1, 0)
+        if self.attacker_cd == 0:
+            for i in range(3):
+                if action[i] == 1:
+                    res = self.__board.summon_enemy(i)
+                    if res:
+                        self.attacker_cd = config.attacker_action_interval
+                        if not config.allow_multiple_action:
+                            break
         
         self.random_tower()
 
         reward = -self.__board.step()
         done = self.__board.done()
-        states = {
-            "Map": self.__board.get_states(),
-            "Cost": self.__board.cost_atk
-        }
+        states = self.__board.get_states()
         return states, reward, done, {}
 
     def reset(self):
@@ -58,10 +62,9 @@ class TDAttack(gym.Env):
             config.max_cost,
             config.base_LP
         )
-        states = {
-            "Map": self.__board.get_states(),
-            "Cost": self.__board.cost_atk
-        }
+        self.attacker_cd = 0
+        self.defender_cd = 0
+        states = self.__board.get_states()
         return states
     
     def test(self):
@@ -71,16 +74,17 @@ class TDAttack(gym.Env):
         self.__board.tower_build([self.map_size//2, self.map_size//2])
         self.__board.step()
     def empty_step(self):
+        self.attacker_cd = max(self.attacker_cd-1, 0)
+        self.defender_cd = max(self.defender_cd-1, 0)
         reward = -self.__board.step()
         done = self.__board.done()
-        states = {
-            "Map": self.__board.get_states(),
-            "Cost": self.__board.cost_atk
-        }
+        states = self.__board.get_states()
         return states, reward, done, {}
     def random_tower(self):
-        r, c = self.np_random.randint(0, self.map_size, 2)
-        self.__board.tower_build([r,c])
+        if self.defender_cd == 0:
+            r, c = self.np_random.randint(0, self.map_size, 2)
+            if self.__board.tower_build([r,c]):
+                self.defender_cd = config.defender_action_interval
 
     def render(self, mode="human"):
         return self.__board.render(mode)

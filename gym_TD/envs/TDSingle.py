@@ -21,10 +21,8 @@ class TDSingle(gym.Env):
             "RangeUp": spaces.Box(low=0, high=1, shape=(map_size, map_size), dtype=np.int32),
             "Destruct": spaces.Box(low=0, high=1, shape=(map_size, map_size), dtype=np.int32)
         })
-        self.observation_space = spaces.Dict({
-            "Map": spaces.Box(low=0., high=1., shape=(map_size, map_size, len(TDBoard.channels)), dtype=np.float32),
-            "Cost": spaces.Discrete(config.max_cost)
-        })
+        self.observation_space = \
+            spaces.Box(low=0., high=2., shape=(map_size, map_size, TDBoard.n_channels()), dtype=np.float32)
         self.map_size = map_size
         self.__board = None
         self.seed()
@@ -38,25 +36,48 @@ class TDSingle(gym.Env):
         err_msg = "%r (%s) invalid" % (action, type(action))
         assert self.action_space.contains(action), err_msg
 
-        for r in range(self.__board.map_size):
-            for c in range(self.__board.map_size):
-                if action["Build"][r][c] == 1:
-                    self.__board.tower_build([r,c])
-                if action["ATKUp"][r][c] == 1:
-                    self.__board.tower_atkup([r,c])
-                if action["RangeUp"][r][c] == 1:
-                    self.__board.tower_rangeup([r,c])
-                if action["Destruct"][r][c] == 1:
-                    self.__board.tower_destruct([r,c])
+        self.attacker_cd = max(self.attacker_cd-1, 0)
+        self.defender_cd = max(self.defender_cd-1, 0)
+        if self.defender_cd == 0:
+            stop = False
+            for r in range(self.__board.map_size):
+                for c in range(self.__board.map_size):
+                    if action["Build"][r][c] == 1:
+                        res = self.__board.tower_build([r,c])
+                        if res:
+                            self.defender_cd = config.defender_action_interval
+                            if not config.allow_multiple_action:
+                                stop = True
+                                break
+                    if action["ATKUp"][r][c] == 1:
+                        res = self.__board.tower_atkup([r,c])
+                        if res:
+                            self.defender_cd = config.defender_action_interval
+                            if not config.allow_multiple_action:
+                                stop = True
+                                break
+                    if action["RangeUp"][r][c] == 1:
+                        res = self.__board.tower_rangeup([r,c])
+                        if res:
+                            self.defender_cd = config.defender_action_interval
+                            if not config.allow_multiple_action:
+                                stop = True
+                                break
+                    if action["Destruct"][r][c] == 1:
+                        res = self.__board.tower_destruct([r,c])
+                        if res:
+                            self.defender_cd = config.defender_action_interval
+                            if not config.allow_multiple_action:
+                                stop = True
+                                break
+                if stop:
+                    break
                     
         self.random_enemy()
         
         reward = self.__board.step()
         done = self.__board.done()
-        states = {
-            "Map": self.__board.get_states(),
-            "Cost": self.__board.cost_def
-        }
+        states = self.__board.get_states()
         return states, reward, done, {}
 
     def reset(self):
@@ -70,10 +91,9 @@ class TDSingle(gym.Env):
             config.max_cost,
             config.base_LP
         )
-        states = {
-            "Map": self.__board.get_states(),
-            "Cost": self.__board.cost_def
-        }
+        self.attacker_cd = 0
+        self.defender_cd = 0
+        states = self.__board.get_states()
         return states
     
     def test(self):
@@ -83,18 +103,19 @@ class TDSingle(gym.Env):
         self.__board.tower_build([self.map_size//2, self.map_size//2])
         self.__board.step()
     def empty_step(self):
+        self.attacker_cd = max(self.attacker_cd-1, 0)
+        self.defender_cd = max(self.defender_cd-1, 0)
         reward = self.__board.step()
         done = self.__board.done()
-        states = {
-            "Map": self.__board.get_states(),
-            "Cost": self.__board.cost_def
-        }
+        states = self.__board.get_states()
         return states, reward, done, {}
     def random_enemy(self):
-        t = self.np_random.randint(0, 4)
-        if t == 3:
-            return
-        self.__board.summon_enemy(t)
+        if self.attacker_cd == 0:
+            t = self.np_random.randint(0, 4)
+            if t == 3:
+                return
+            if self.__board.summon_enemy(t):
+                self.attacker_cd = config.defender_action_interval
 
     def render(self, mode="human"):
         return self.__board.render(mode)

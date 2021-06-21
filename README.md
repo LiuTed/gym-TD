@@ -3,7 +3,7 @@
 ## Introduction
 gym-TD is a simplified Tower Defense game (TD game). Your goal is to build towers to prevent enemies entering your base as long as possible. You can also control the attacker to summon enemies to enter the defender's base as many times as possible.
 
-<kbd>![Simple TD game environment](gymTD.png)</kbd>
+<kbd>![Demo](demo.png)</kbd>
 
 ### Board
 Board is where this game happens. It contains blocks of shape `(length, length)`. The elements is described as follow:
@@ -15,6 +15,7 @@ Board is where this game happens. It contains blocks of shape `(length, length)`
 - Black square: A part of a path where the enemies will walk.
 - Red square: The start point where the enemies will be summoned.
 - Blue square: The base point of defender.
+    - Light blue bar: The LP bar of base point.
 - Lake blue square: A defense tower.
     - Green bar on the left side: The level of ATK of this tower.
     - Green bar on the right side: The level of attack range of this tower.
@@ -28,26 +29,24 @@ Board is where this game happens. It contains blocks of shape `(length, length)`
 ### Defender
 Defender is the player in most other TD games. Your goal is to build and upgrade your towers, which could automatically attack the enemies, to protect your base point.
 - Observation space:
-    A Python dict of this form:
-    ```
-    {
-        "Map": "A NumPy Array of shape (length, length, 12) and dtype=np.float32.",
-        "Cost": "The cost you have. It is a integer in [0, max_cost]."
-    }
-    ```
-    Channels in Map:
-    - 0: If this block is a road. (0 for False and 1 for True)
-    - 1: If this block is a start point.
-    - 2: If this block is a base point.
-    - 3: If this block has a tower.
-    - 4: The ATK level of this tower: One of 0, 1, 2
-    - 5: The Range level of this tower: One of 0, 1, 2
-    - 6: The LP (life point) ratio of EnemyBalance in this block.
-    - 7: The LP ratio of EnemyStrong in this block.
-    - 8: The LP ratio of EnemyFast in this block.
-    - 9: The distance that EnemyBalance has passed in this block.
-    - 10: The distance that EnemyStrong has passed in this block.
-    - 11: The distance that EnemyFast has passed in this block.
+    - An NumPy array of shape (length, length, 8+`enemy_overlay_limit`*6)
+    - Channels in Map:
+      - 0: If this block is a road. (0 for False and 1 for True)
+      - 1: If this block is a start point.
+      - 2: If this block is a base point.
+      - 3: The costs that the defender has. (Normalized to 1)
+      - 4: The costs that the attacker has. (Normalized to 1)
+      - 5: If this block has a tower.
+      - 6: The ATK level of this tower: One of 0, 1, 2
+      - 7: The Range level of this tower: One of 0, 1, 2
+      - [8, 8+`enemy_overlay_limit`): The LP (life point) ratio of EnemyBalance in this block. The values will be filled in sequence. For example, if there are `n` enemies, the channels [8, 8+`n`) will be filled. Besides, the enemy closer to the base point will be filled in channels with smaller index.
+      - [8+`enemy_overlay_limit`, 8+`enemy_overlay_limit`*2): The LP ratio of EnemyStrong in this block.
+      - [8+`enemy_overlay_limit`*2, 8+`enemy_overlay_limit`*3): The LP ratio of EnemyFast in this block.
+      - [8+`enemy_overlay_limit`*3, 8+`enemy_overlay_limit`*4): The distance that EnemyBalance has passed in this block.
+      - [8+`enemy_overlay_limit`*4, 8+`enemy_overlay_limit`*5): The distance that EnemyStrong has passed in this block.
+      - [8+`enemy_overlay_limit`*5, 8+`enemy_overlay_limit`*6): The distance that EnemyFast has passed in this block.
+    - `enemy_overlay_limit`: Allows how many enemies at the same block. Default is 20. You can change this value in [TDParam.py:HyperParameters:__init__()](gym_TD/envs/TDParam.py)
+
 
 - Action space:
     A Python dict of this form:
@@ -75,15 +74,7 @@ Your goal is to summon the enemies with some strategy so that as many enemies (c
 ### Multi-player
 You could control both the defender and attacker.
 - Observation space:
-    A Python dict of this form:
-    ```
-    {
-        "Map": "A NumPy Array of shape (length, length, 12) and dtype=np.float32.",
-        "Cost_Attacker": "The cost that the attacker has. It is a integer in [0, max_cost].",
-        "Cost_Defender": "The cost that the defender has. It is a integer in [0, max_cost].",
-    }
-    ```
-    Channels same as above.
+    Same as defender.
 
 - Action space:
     A Python dict of this form:
