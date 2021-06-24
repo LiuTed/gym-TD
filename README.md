@@ -49,16 +49,13 @@ Defender is the player in most other TD games. Your goal is to build and upgrade
 
 
 - Action space:
-    A Python dict of this form:
-    ```
-    {
-        "Build": "A NumPy Array of shape (length, length) and dtype=np.int32. It represents whether to build a tower at this place. (1 for True)",
-        "ATKUp": "A NumPy Array of shape (length, length) and dtype=np.int32. It represents whether to upgrade the ATK of the tower at this place.",
-        "RangeUp": "A NumPy Array of shape (length, length) and dtype=np.int32. It represents whether to upgrade the attack range of the tower at this place.",
-        "Destruct": "A NumPy Array of shape (length, length) and dtype=np.int32. It represents whether to destruct the tower at this place. Destruction will return some costs spent on this tower."
-    }
-    ```
-    The four actions are processed in order, which means you could build a tower and upgrade it and then destruct it in a single action, but you could not upgrade the same property twice in a single action.
+    - An NumPy array of shape (length, length, 4) and dtype=np.int32
+    - Channels description:
+        - 0: Build: Whether to build a tower at this place. (1 for True)
+        - 1: ATKUp: Whether to upgrade the ATK of the tower at this place.
+        - 2: RangeUp: Whether to upgrade the attack range of the tower at this place.
+        - 3: Destruct: Whether to destruct the tower at this place. Destruction will return some costs spent on this tower.
+    - The four actions are processed in order (Process Build, ATKUp, RangeUp, Destruct in order in one block, and then these four actions in another block), which means you could build a tower and upgrade it and then destruct it in a single action, but you could not upgrade the same property twice in a single action.
 
     **Note**: The illegal actions will be ignored.
 
@@ -80,14 +77,8 @@ You could control both the defender and attacker.
     A Python dict of this form:
     ```
     {
-        "Attacker": "A list of len = 3, same as attacker's action space"
-        "Defender":
-        {
-            "Build": "A NumPy Array of shape (length, length) and dtype=np.int32. It represents whether to build a tower at this place. (1 for True)",
-            "ATKUp": "A NumPy Array of shape (length, length) and dtype=np.int32. It represents whether to upgrade the ATK of the tower at this place.",
-            "RangeUp": "A NumPy Array of shape (length, length) and dtype=np.int32. It represents whether to upgrade the attack range of the tower at this place.",
-            "Destruct": "A NumPy Array of shape (length, length) and dtype=np.int32. It represents whether to destruct the tower at this place. Destruction will return some costs spent on this tower."
-        }
+        "Attacker": "Same to the action space of attacker"
+        "Defender": "Same to the action space of defender"
     }
     ```
 

@@ -15,12 +15,7 @@ class TDSingle(gym.Env):
 
     def __init__(self, map_size):
         super(TDSingle, self).__init__()
-        self.action_space = spaces.Dict({
-            "Build": spaces.Box(low=0, high=1, shape=(map_size, map_size), dtype=np.int32),
-            "ATKUp": spaces.Box(low=0, high=1, shape=(map_size, map_size), dtype=np.int32),
-            "RangeUp": spaces.Box(low=0, high=1, shape=(map_size, map_size), dtype=np.int32),
-            "Destruct": spaces.Box(low=0, high=1, shape=(map_size, map_size), dtype=np.int32)
-        })
+        self.action_space = spaces.Box(low=0, high=1, shape=(map_size, map_size, 4), dtype=np.int32)
         self.observation_space = \
             spaces.Box(low=0., high=2., shape=(map_size, map_size, TDBoard.n_channels()), dtype=np.float32)
         self.map_size = map_size
@@ -42,28 +37,28 @@ class TDSingle(gym.Env):
             stop = False
             for r in range(self.__board.map_size):
                 for c in range(self.__board.map_size):
-                    if action["Build"][r][c] == 1:
+                    if action[r][c][0] == 1:
                         res = self.__board.tower_build([r,c])
                         if res:
                             self.defender_cd = config.defender_action_interval
                             if not config.allow_multiple_action:
                                 stop = True
                                 break
-                    if action["ATKUp"][r][c] == 1:
+                    if action[r][c][1] == 1:
                         res = self.__board.tower_atkup([r,c])
                         if res:
                             self.defender_cd = config.defender_action_interval
                             if not config.allow_multiple_action:
                                 stop = True
                                 break
-                    if action["RangeUp"][r][c] == 1:
+                    if action[r][c][2] == 1:
                         res = self.__board.tower_rangeup([r,c])
                         if res:
                             self.defender_cd = config.defender_action_interval
                             if not config.allow_multiple_action:
                                 stop = True
                                 break
-                    if action["Destruct"][r][c] == 1:
+                    if action[r][c][3] == 1:
                         res = self.__board.tower_destruct([r,c])
                         if res:
                             self.defender_cd = config.defender_action_interval
