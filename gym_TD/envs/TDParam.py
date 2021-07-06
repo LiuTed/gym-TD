@@ -38,6 +38,9 @@ class Config(object):
         self.attacker_action_interval = 1
         self.defender_action_interval = 1
 
+        self.attacker_cost_rate = 0.5
+        self.defender_cost_rate = 0.3
+
 config = Config()
 
 def paramConfig(**kwargs):

@@ -236,7 +236,7 @@ class TDBoard(object):
     def tower_destruct(self, loc):
         for t in self.towers:
             if loc == t.loc:
-                self.cost_def += int(t.cost * config.tower_destruct_return)
+                self.cost_def += t.cost * config.tower_destruct_return
                 self.towers.remove(t)
                 logger.debug('Destruct tower ({},{})'.format(loc[0], loc[1]))
                 return True
@@ -298,8 +298,8 @@ class TDBoard(object):
             self.enemies.remove(e)
             self.cnt[e.loc[0], e.loc[1], e.type] -= 1
         
-        self.cost_atk = min(self.cost_atk+1, self.max_cost)
-        self.cost_def = min(self.cost_def+1, self.max_cost)
+        self.cost_atk = min(self.cost_atk+config.attacker_cost_rate, self.max_cost)
+        self.cost_def = min(self.cost_def+config.defender_cost_rate, self.max_cost)
         logger.debug('Reward: {}'.format(reward))
         return reward
     

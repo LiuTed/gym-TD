@@ -15,7 +15,7 @@ class TDAttack(gym.Env):
 
     def __init__(self, map_size):
         super(TDAttack, self).__init__()
-        self.action_space = spaces.MultiBinary(3)
+        self.action_space = spaces.Discrete(4)
         self.observation_space = \
             spaces.Box(low=0., high=2., shape=(map_size, map_size, TDBoard.n_channels()), dtype=np.float32)
         self.map_size = map_size
@@ -36,13 +36,17 @@ class TDAttack(gym.Env):
         self.attacker_cd = max(self.attacker_cd-1, 0)
         self.defender_cd = max(self.defender_cd-1, 0)
         if self.attacker_cd == 0:
-            for i in range(3):
-                if action[i] == 1:
-                    res = self.__board.summon_enemy(i)
-                    if res:
-                        self.attacker_cd = config.attacker_action_interval
-                        if not config.allow_multiple_action:
-                            break
+            if action < 3:
+                res = self.__board.summon_enemy(action)
+                if res:
+                    self.attacker_cd = config.attacker_action_interval
+            # for i in range(3):
+            #     if action[i] == 1:
+            #         res = self.__board.summon_enemy(i)
+            #         if res:
+            #             self.attacker_cd = config.attacker_action_interval
+            #             if not config.allow_multiple_action:
+            #                 break
         
         self.random_tower()
 
