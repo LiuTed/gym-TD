@@ -9,6 +9,7 @@ import torch
 import numpy as np
 from tensorboardX import SummaryWriter
 import argparse
+import time
 
 def game_loop(env, dqn, writer, title, train = True):
     state = env.reset()
@@ -54,9 +55,9 @@ def game_loop(env, dqn, writer, title, train = True):
 def train(env_name, map_size, logdir, restore, ckpt):
     env = gym.make(env_name, map_size=map_size)
     logger.set_level(logger.INFO)
-    env = wrappers.Monitor(env, directory=logdir, force=True)
+    env = wrappers.Monitor(env, directory=logdir, force=True, video_callable=False)
     writer = SummaryWriter(logdir)
-    eps_sche = EpsScheduler.EpsScheduler(1., 'Linear', lower_bound=0.1, target_steps=10000)
+    eps_sche = EpsScheduler.EpsScheduler(1., 'Linear', lower_bound=0.1, target_steps=200000)
 
     net = Net.FCN(map_size, map_size, env.action_space.n).to(Param.device)
     dqn = DQN.DQN(Param.MEMORY_SIZE, eps_sche, env.action_space.n, net)
@@ -76,6 +77,7 @@ def train(env_name, map_size, logdir, restore, ckpt):
         episode_step += step
         if(episode_step >= Param.STEPS_PER_EPISODE):
             episode_step = 0
+            print('{}: episode {} finished'.format(time.localtime(time.time()),i))
             i += 1
 
         if loop % Param.DO_TEST_EVERY_LOOP == 0:

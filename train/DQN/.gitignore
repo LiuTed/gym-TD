@@ -1,3 +1,4 @@
 log
 Result*
 __pycache__
+*.pyc
