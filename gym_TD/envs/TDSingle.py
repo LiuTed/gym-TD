@@ -15,7 +15,7 @@ class TDSingle(gym.Env):
 
     def __init__(self, map_size):
         super(TDSingle, self).__init__()
-        self.action_space = spaces.Box(low=0, high=1, shape=(map_size, map_size, 4), dtype=np.int32)
+        self.action_space = spaces.Discrete(map_size*map_size*4+1)
         self.observation_space = \
             spaces.Box(low=0., high=2., shape=(map_size, map_size, TDBoard.n_channels()), dtype=np.float32)
         self.map_size = map_size
@@ -33,40 +33,20 @@ class TDSingle(gym.Env):
 
         self.attacker_cd = max(self.attacker_cd-1, 0)
         self.defender_cd = max(self.defender_cd-1, 0)
-        if self.defender_cd == 0:
-            stop = False
-            for r in range(self.__board.map_size):
-                for c in range(self.__board.map_size):
-                    if action[r][c][0] == 1:
-                        res = self.__board.tower_build([r,c])
-                        if res:
-                            self.defender_cd = config.defender_action_interval
-                            if not config.allow_multiple_action:
-                                stop = True
-                                break
-                    if action[r][c][1] == 1:
-                        res = self.__board.tower_atkup([r,c])
-                        if res:
-                            self.defender_cd = config.defender_action_interval
-                            if not config.allow_multiple_action:
-                                stop = True
-                                break
-                    if action[r][c][2] == 1:
-                        res = self.__board.tower_rangeup([r,c])
-                        if res:
-                            self.defender_cd = config.defender_action_interval
-                            if not config.allow_multiple_action:
-                                stop = True
-                                break
-                    if action[r][c][3] == 1:
-                        res = self.__board.tower_destruct([r,c])
-                        if res:
-                            self.defender_cd = config.defender_action_interval
-                            if not config.allow_multiple_action:
-                                stop = True
-                                break
-                if stop:
-                    break
+        if self.defender_cd == 0 and action != self.map_size*self.map_size*4:
+            act = action // (self.map_size*self.map_size)
+            r = (action // self.map_size) % self.map_size
+            c = action % self.map_size
+            if act == 0:
+                res = self.__board.tower_build([r, c])
+            elif act == 1:
+                res = self.__board.tower_atkup([r, c])
+            elif act == 2:
+                res = self.__board.tower_rangeup([r, c])
+            elif act == 3:
+                res = self.__board.tower_destruct([r, c])
+            if res:
+                self.defender_cd = config.defender_action_interval
                     
         self.random_enemy()
         

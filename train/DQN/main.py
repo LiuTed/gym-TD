@@ -59,8 +59,12 @@ def train(env_name, map_size, logdir, restore, ckpt):
     writer = SummaryWriter(logdir)
     eps_sche = EpsScheduler.EpsScheduler(1., 'Linear', lower_bound=0.1, target_steps=200000)
 
-    net = Net.FCN(map_size, map_size, env.action_space.n).to(Param.device)
-    dqn = DQN.DQN(Param.MEMORY_SIZE, eps_sche, env.action_space.n, net)
+    if env_name.startswith('TD-atk'):
+        net = Net.FCN(map_size, map_size, env.action_space.n).to(Param.device)
+        dqn = DQN.DQN(Param.MEMORY_SIZE, eps_sche, env.action_space.n, net)
+    elif env_name.startswith('TD-def'):
+        net = Net.UNet(129, map_size, map_size).to(Param.device)
+        dqn = DQN.DQN(Param.MEMORY_SIZE, eps_sche, env.action_space.n, net)
         
     if restore:
         dqn.restore(ckpt)
@@ -105,7 +109,7 @@ if __name__ == '__main__':
     parser.add_argument('-c', '--checkpoint', type=str, help='the name of checkpoint', default='net.pkl')
     parser.add_argument('-r', '--restore', action='store_true', help='load checkpoint')
     parser.add_argument('-t', '--test', action='store_true', help='run test')
-    parser.add_argument('-e', '--env', type=str, help='gym environment', default='TD-atk-v0')
+    parser.add_argument('-e', '--env', type=str, help='gym environment', default='TD-def-v0')
     # parser.add_argument('-N', '--net', type=str, help='network structure', default=None)
 
     parser.add_argument('-S', '--map-size', type=int, help='the map size used in tower defense game', default=20)

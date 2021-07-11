@@ -21,12 +21,19 @@ def play_demo():
 
 def play_atk():
     env = gym.make('TD-atk-middle-v0')
-    env.reset()
-    env.render()
-    done = False
-    while not done:
-        _, _, done, _ = env.step(env.action_space.sample())
-        env.render()
+    rs = []
+    for i in range(1000):
+        env.reset()
+        # env.render()
+        done = False
+        tr = 0.
+        while not done:
+            _, r, done, _ = env.step(env.action_space.sample())
+            # env.render()
+            tr += r
+        rs.append(tr)
+    print(rs, sum(rs)/len(rs))
+        
 
 def play_def():
     env = gym.make('TD-def-middle-v0')
