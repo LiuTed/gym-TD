@@ -51,6 +51,8 @@ class UNet(nn.Module):
             setattr(self, 'upconv{}_1'.format(id), nn.Conv2d(out_c+in2, out_c, ks, padding='same'))
             setattr(self, 'upconv{}_2'.format(id), nn.Conv2d(out_c, out_c, ks, padding='same'))
 
+        oh, ow = h, w
+
         self.conv0 = nn.Conv2d(cin, 32, 1)
         down_conv(1, 5, 32, 64)
         up_conv(1, 3, 128, 64, 64, [h%2, w%2])
@@ -64,7 +66,7 @@ class UNet(nn.Module):
         self.conv4 = nn.Conv2d(256, 512, 3, padding='same')
         self.conv5 = nn.Conv2d(64, 4, 1)
         self.flat = nn.Flatten()
-        self.dense = nn.Linear(4*h*w, 1)
+        self.dense = nn.Linear(4*oh*ow, 1)
     
     def forward(self, x):
         x = func.relu(self.conv0(x), inplace=True)
@@ -82,7 +84,7 @@ class UNet(nn.Module):
             x = getattr(self, 'upbn{}'.format(i))(x)
             x = func.relu(getattr(self, 'upconv{}_1'.format(i))(x), inplace=True)
             x = func.relu(getattr(self, 'upconv{}_2'.format(i))(x), inplace=True)
-        x = func.relu(self.conv5(x), inplace=True)
+        x = self.conv5(x)
         x = self.flat(x)
         nop = self.dense(x)
         return torch.cat([x, nop], 1)

@@ -4,7 +4,7 @@ import Param
 import EpsScheduler
 import gym
 from gym import logger, wrappers
-from gym_TD.TDParam import config
+import gym_TD
 import torch
 import numpy as np
 from tensorboardX import SummaryWriter
@@ -63,7 +63,7 @@ def train(env_name, map_size, logdir, restore, ckpt):
         net = Net.FCN(map_size, map_size, env.action_space.n).to(Param.device)
         dqn = DQN.DQN(Param.MEMORY_SIZE, eps_sche, env.action_space.n, net)
     elif env_name.startswith('TD-def'):
-        net = Net.UNet(129, map_size, map_size).to(Param.device)
+        net = Net.UNet(env.observation_space.shape[2], map_size, map_size).to(Param.device)
         dqn = DQN.DQN(Param.MEMORY_SIZE, eps_sche, env.action_space.n, net)
         
     if restore:
