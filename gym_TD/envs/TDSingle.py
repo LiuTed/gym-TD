@@ -85,7 +85,10 @@ class TDSingle(gym.Env):
         reward = self.__board.step()
         done = self.__board.done()
         states = self.__board.get_states()
-        return states, reward, done, {'RealAction': real_act}
+        win = None
+        if done:
+            win = self.__board.base_LP is None or self.__board.base_LP > 0
+        return states, reward, done, {'RealAction': real_act, 'Win': win}
 
     def reset(self):
         if self.__board is not None:

@@ -19,11 +19,13 @@ def game_loop(env, dqn, writer, title, train = True):
     loss_sum = 0.
     loss_n = 0
     total_reward = 0.
+    win = None
     while not done:
         action = dqn.get_action(state)
-        next_state, reward, done, _ = env.step(action.item())
+        next_state, reward, done, info = env.step(action.item())
         if done:
             next_state = None
+            win = info['Win']
         else:
             next_state = torch.Tensor([next_state.transpose(2, 0, 1)])
         dqn.push([
@@ -50,7 +52,7 @@ def game_loop(env, dqn, writer, title, train = True):
         loss_avg = 0.
     else:
         loss_avg = loss_sum / loss_n
-    return step, loss_avg, total_reward
+    return step, loss_avg, total_reward, win
 
 def train(env_name, map_size, logdir, restore, ckpt):
     env = gym.make(env_name, map_size=map_size)
@@ -73,7 +75,7 @@ def train(env_name, map_size, logdir, restore, ckpt):
     loop = 0
     episode_step = 0
     while i < Param.NUM_EPISODE:
-        step, loss, total_reward = game_loop(env, dqn, writer, 'Train')
+        step, loss, total_reward, win = game_loop(env, dqn, writer, 'Train')
         writer.add_scalar('Train/eps', dqn.eps_scheduler.eps, dqn.step)
         # for idx, param in enumerate(dqn.policy.parameters()):
         #     writer.add_histogram('Train/Param%d'%idx, param.data, dqn.step)
@@ -81,19 +83,21 @@ def train(env_name, map_size, logdir, restore, ckpt):
         episode_step += step
         if(episode_step >= Param.STEPS_PER_EPISODE):
             episode_step = 0
-            print('{}: episode {} finished'.format(time.localtime(time.time()),i))
+            print('{}: episode {} finished'.format(time.asctime(time.localtime(time.time())),i))
             i += 1
 
         if loop % Param.DO_TEST_EVERY_LOOP == 0:
-            avgstep = 0
-            avgreward = 0
+            steps = []
+            rewards = []
+            wins = []
             for _ in range(Param.TEST_EPISODE):
-                step, loss, total_reward = game_loop(env, dqn, writer, 'Test', False)
-                avgstep += step
-                avgreward += total_reward
-            avgstep /= Param.TEST_EPISODE
-            avgreward /= Param.TEST_EPISODE
-            writer.add_scalar('Test/reward_average', avgreward, dqn.step)
+                step, loss, total_reward, win = game_loop(env, dqn, writer, 'Test', False)
+                steps.append(step)
+                rewards.append(total_reward)
+                wins.append(win)
+            writer.add_scalar('Test/reward_average', sum(rewards)/len(rewards), dqn.step)
+            writer.add_scalar('Test/episode_length_average', sum(steps)/len(steps), dqn.step)
+            writer.add_scalar('Test/winning_rate', sum(wins)/len(wins), dqn.step)
             # if avgstep >= 195.0:
             #     print('Solved!')
             #     #break
