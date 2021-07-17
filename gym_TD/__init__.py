@@ -1,7 +1,7 @@
 from gym.envs.registration import register
-from gym_TD.envs.TDParam import hyper_parameters
+from gym_TD.envs.TDParam import getConfig, paramConfig, getHyperParameters, hyper_parameters
 
-__version__ = "0.3.2"
+__version__ = "0.3.3"
 
 register(
     id='TD-def-small-v0',

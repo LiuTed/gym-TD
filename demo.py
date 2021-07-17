@@ -1,7 +1,7 @@
 import gym
 from gym import logger, wrappers
 import gym_TD
-from gym_TD.envs import getConfig
+from gym_TD import getConfig, paramConfig, hyper_parameters, getHyperParameters
 
 from time import sleep
 
@@ -22,27 +22,51 @@ def play_demo():
 def play_atk():
     env = gym.make('TD-atk-middle-v0')
     rs = []
-    for i in range(1000):
+    el = []
+    win = []
+    for i in range(300):
         env.reset()
         # env.render()
         done = False
         tr = 0.
+        s = 0
         while not done:
             _, r, done, _ = env.step(env.action_space.sample())
             # env.render()
             tr += r
+            s += 1
         rs.append(tr)
-    print(rs, sum(rs)/len(rs))
+        el.append(s)
+        if s == hyper_parameters.max_episode_steps:
+            win.append(0)
+        else:
+            win.append(1)
+    print(sum(rs)/len(rs), sum(el)/len(el), sum(win)/len(win)*100)
         
 
 def play_def():
     env = gym.make('TD-def-middle-v0')
-    env.reset()
-    env.render()
-    done = False
-    while not done:
-        _, _, done, _ = env.step(env.action_space.sample())
-        env.render()
+    rs = []
+    el = []
+    win = []
+    for i in range(300):
+        env.reset()
+        # env.render()
+        done = False
+        tr = 0.
+        s = 0
+        while not done:
+            _, r, done, _ = env.step(env.action_space.sample())
+            # env.render()
+            tr += r
+            s += 1
+        rs.append(tr)
+        el.append(s)
+        if s == hyper_parameters.max_episode_steps:
+            win.append(1)
+        else:
+            win.append(0)
+    print(sum(rs)/len(rs), sum(el)/len(el), sum(win)/len(win)*100)
 
 def play_2p():
     env = gym.make('TD-2p-middle-v0')
@@ -54,16 +78,42 @@ def play_2p():
         env.random_enemy()
         _, _, done, _ = env.empty_step()
         env.render()
+    
+def single_enemy(loop, i):
+    env = gym.make('TD-atk-middle-v0')
+    rs = []
+    el = []
+    win = []
+    next_act = 0
+    for _ in range(loop):
+        env.reset()
+        done = False
+        tr = 0.
+        s = 0
+        while not done:
+            if i < 3:
+                next_act = i
+            __, r, done, info = env.step(next_act)
+            if info["RealAction"] == next_act:
+                next_act = (next_act+1)%4
+            tr += r
+            s += 1
+        rs.append(tr)
+        el.append(s)
+        if s == hyper_parameters.max_episode_steps:
+            win.append(0)
+        else:
+            win.append(1)
+    print(i, ':', sum(rs)/len(rs), sum(el)/len(el), sum(win)/len(win)*100)
 
 def test():
     print(getConfig())
-    env = gym.make('TD-2p-v0', map_size=21)
-    env = wrappers.Monitor(env, directory='/tmp/gym_TD', force=True)
-    for __ in range(17):
-        env.reset()
-        done = False
-        while not done:
-            _, _, done, _ = env.step(env.action_space.sample())
+    print(getHyperParameters())
+    for i in [0, 1, 2, 3]:
+        single_enemy(300, i)
+    play_atk()
+    
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -78,6 +128,19 @@ if __name__ == "__main__":
         logger.set_level(logger.DEBUG)
     else:
         logger.set_level(logger.INFO)
+    
+    paramConfig(
+        base_LP=3,
+        reward_time=0.001,
+        enemy_balance_LP = 15,
+        enemy_strong_LP = 25,
+        enemy_fast_LP = 8,
+        enemy_balance_speed = 0.4,
+        enemy_strong_speed = 0.22,
+        enemy_fast_speed = 0.65,
+        tower_attack_interval = 2,
+        dummy = None
+    )
 
     if args.a:
         play_atk()

@@ -7,14 +7,14 @@ Here is the implementation of gym-TD. Hope this document could help you read the
 ## TDParam
 
 `config` stores all the parameters that could be modified. Some descriptions and the default values of initial parameters are shown below:
-- `enemy_balance_LP`: 10
+- `enemy_balance_LP`: 15
 - `enemy_balance_speed`: 0.2
 - `enemy_balance_cost`: 3
-- `enemy_strong_LP`: 20
-- `enemy_strong_speed`: 0.1
+- `enemy_strong_LP`: 25
+- `enemy_strong_speed`: 0.11
 - `enemy_strong_cost`: 3
-- `enemy_fast_LP`: 5
-- `enemy_fast_speed`: 0.4
+- `enemy_fast_LP`: 8
+- `enemy_fast_speed`: 0.32
 - `enemy_fast_cost`: 3
 - `attacker_init_cost`: 10
 - `defender_init_cost`: 5
@@ -31,17 +31,19 @@ Here is the implementation of gym-TD. Hope this document could help you read the
 - `reward_kill`: Reward of killing an enemy. Default is 0.1
 - `penalty_leak`: Penalty of leaking an enemy. (Enemy enters the base point). Default is 1.
 - `reward_time`: Reward of each step. Default is 0.001
-- `allow_multiple_action`: If allow multiple actions at a single step. Default is False
 - `tower_attack_interval`: Tower attacks at every `tower_attack_interval` steps. Default 5
 - `action_interval`: Allow doing actions (build tower, summon enemy, etc.) at every `action_interval` steps. Default is 1.
 - **Note**: The rewards and penalties listed above are given to the defender. The reward value given to the attacker is always the opposite number of the reward given to the defender.
 
-To change the values, you are supposed to use the function `paramConfig()` like `paramConfig(xxx=abc)`, instead of directly assigning values like `config.xxx=abc`.
+To change the values, you are supposed to use the function `paramConfig()` like `paramConfig(xxx=abc)`, instead of directly assigning values like `config.xxx=abc`. You can also use `getConfig()` to get the Python dict that contains these parameters.
 
 `hyper_parameters` stores all the parameters that should not be changed during running.
-- `max_episode_steps`: The maximum steps of each episode. Default is 200
+- `max_episode_steps`: The maximum steps of each episode. Default is 300
 - `video_frames_per_second`: The rendering frame rate. This will not affect the actual game speed. Default is 50.
 - `enemy_overlay_limit`: Allows how many enemies at the same grid. Default is 20.
+- `allow_multiple_action`: If allow multiple actions at a single step. Default is False.
+
+You can also use `getHyperParameters()` to get a Python dict view of these parameters.
 
 These values are used in the definition of classes and methods, which means even if you changed them, there will not be any effects. If needed, you can directly change them in `HyperParameters.__init__()`.
 

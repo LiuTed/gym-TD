@@ -4,7 +4,7 @@ import Param
 import EpsScheduler
 import gym
 from gym import logger, wrappers
-from gym_TD.envs.TDParam import config
+from gym_TD.TDParam import config
 import torch
 import numpy as np
 from tensorboardX import SummaryWriter

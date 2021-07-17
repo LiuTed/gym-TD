@@ -152,23 +152,31 @@ class TDBoard(object):
         s[self.end[0], self.end[1], 2] = 1
         s[:,:,3] = np.full(shape=(self.map_size, self.map_size), fill_value=self.cost_def/self.max_cost, dtype=np.float32)
         s[:,:,4] = np.full(shape=(self.map_size, self.map_size), fill_value=self.cost_atk/self.max_cost, dtype=np.float32)
+        
+        tower_atk_base = 6
+        tower_range_base = tower_atk_base + len(config.tower_ATKUp_list) + 1
         for t in self.towers:
             s[t.loc[0], t.loc[1], 5] = 1
-            s[t.loc[0], t.loc[1], 6] = t.atklv
-            s[t.loc[0], t.loc[1], 7] = t.rangelv
+            s[t.loc[0], t.loc[1], tower_atk_base+t.atklv] = 1
+            s[t.loc[0], t.loc[1], tower_range_base+t.rangelv] = 1
+
+        enemy_base = tower_range_base + len(config.tower_rangeUp_list) + 1
         for e in self.enemies:
             n = ptr[e.loc[0], e.loc[1], e.type]
-            s[e.loc[0], e.loc[1], 8+hyper_parameters.enemy_overlay_limit*e.type+n] = e.LP/e.maxLP
-            s[e.loc[0], e.loc[1], 8+hyper_parameters.enemy_overlay_limit*(e.type+3)+n] = e.margin
+            s[e.loc[0], e.loc[1], enemy_base+hyper_parameters.enemy_overlay_limit*e.type+n] = e.LP/e.maxLP
+            s[e.loc[0], e.loc[1], enemy_base+hyper_parameters.enemy_overlay_limit*(e.type+3)+n] = e.margin
             ptr[e.loc[0], e.loc[1], e.type] += 1
         return s
     
     @staticmethod
     def n_channels():
-        return 9 + hyper_parameters.enemy_overlay_limit * 6
+        return 8 + len(config.tower_ATKUp_list) + len(config.tower_rangeUp_list) + hyper_parameters.enemy_overlay_limit * 6
     @property
     def state_shape(self):
         return (self.map_size, self.map_size, self.n_channels())
+    
+    def is_valid_pos(self, pos):
+        return pos[0] >= 0 and pos[0] < self.map_size and pos[1] >= 0 and pos[1] < self.map_size
     
     def summon_enemy(self, t):
         e = _create_enemy(t, self.start)
