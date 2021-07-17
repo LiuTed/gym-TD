@@ -14,7 +14,7 @@ class Config(object):
 
         self.attacker_init_cost = 10
         self.defender_init_cost = 10
-        self.base_LP = 10
+        self.base_LP = 3
         self.max_cost = 50
 
         self.tower_basic_cost = 10
@@ -30,7 +30,7 @@ class Config(object):
 
         self.reward_kill = 0.1
         self.penalty_leak = 1.
-        self.reward_time = 0.001
+        self.reward_time = 0.003
 
         self.tower_attack_interval = 5
         self.attacker_action_interval = 1
