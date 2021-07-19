@@ -28,7 +28,7 @@ class DQN(object):
     def get_action(self, state, training=True):
         r = random.random()
         if r < self.eps_scheduler.eps and training:
-            return torch.tensor(np.random.randint(0, 4, [1, ]))
+            return torch.tensor(np.random.randint(0, self.num_act, [1, ]))
         else:
             with torch.no_grad():
                 return self.policy(state.to(Param.device)).max(1)[1].to('cpu')
