@@ -53,18 +53,18 @@ class UNet(nn.Module):
 
         oh, ow = h, w
 
-        self.conv0 = nn.Conv2d(cin, 32, 1)
-        down_conv(1, 5, 32, 64)
-        up_conv(1, 3, 128, 64, 64, [h%2, w%2])
+        self.conv0 = nn.Conv2d(cin, 64, 1)
+        down_conv(1, 5, 64, 128)
+        up_conv(1, 3, 256, 128, 128, [h%2, w%2])
         h, w = h//2, w//2
-        down_conv(2, 3, 64, 128)
-        up_conv(2, 3, 256, 128, 128, [h%2, w%2])
+        down_conv(2, 3, 128, 256)
+        up_conv(2, 3, 512, 256, 256, [h%2, w%2])
         h, w = h//2, w//2
-        down_conv(3, 3, 128, 256)
-        up_conv(3, 3, 512, 256, 256, [h%2, w%2])
+        down_conv(3, 3, 256, 512)
+        up_conv(3, 3, 1024, 512, 512, [h%2, w%2])
         h, w = h//2, w//2
-        self.conv4 = nn.Conv2d(256, 512, 3, padding='same')
-        self.conv5 = nn.Conv2d(64, 4, 1)
+        self.conv4 = nn.Conv2d(512, 1024, 3, padding='same')
+        self.conv5 = nn.Conv2d(128, 4, 1)
         self.flat = nn.Flatten()
         self.dense = nn.Linear(4*oh*ow, 1)
     

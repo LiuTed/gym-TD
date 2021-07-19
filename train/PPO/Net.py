@@ -23,7 +23,7 @@ class FCN(nn.Module):
         self.dense2 = nn.Linear(1024, out)
 
         if out_prob:
-            self.activ = nn.Softmax()
+            self.activ = nn.Softmax(1)
         else:
             self.activ = nn.Identity()
 
@@ -72,24 +72,24 @@ class UNet(nn.Module):
         self.dense = nn.Linear(4*oh*ow, 1)
     
     def forward(self, x):
-        x = func.relu(self.conv0(x), inplace=True)
+        x = func.relu(self.conv0(x))
         v = {}
         for i in [1, 2, 3]:
-            x = func.relu(getattr(self, 'conv{}_1'.format(i))(x), inplace=True)
-            x = func.relu(getattr(self, 'conv{}_2'.format(i))(x), inplace=True)
+            x = func.relu(getattr(self, 'conv{}_1'.format(i))(x))
+            x = func.relu(getattr(self, 'conv{}_2'.format(i))(x))
             v['c{}'.format(i)] = x
             x = getattr(self, 'maxpool{}'.format(i))(x)
             x = getattr(self, 'bn{}'.format(i))(x)
-        x = func.relu(self.conv4(x), inplace=True)
+        x = func.relu(self.conv4(x))
         for i in [3, 2, 1]:
-            x = func.relu(getattr(self, 'up{}'.format(i))(x), inplace=True)
+            x = func.relu(getattr(self, 'up{}'.format(i))(x))
             x = torch.cat([x, v['c{}'.format(i)]], 1)
             x = getattr(self, 'upbn{}'.format(i))(x)
-            x = func.relu(getattr(self, 'upconv{}_1'.format(i))(x), inplace=True)
-            x = func.relu(getattr(self, 'upconv{}_2'.format(i))(x), inplace=True)
+            x = func.relu(getattr(self, 'upconv{}_1'.format(i))(x))
+            x = func.relu(getattr(self, 'upconv{}_2'.format(i))(x))
         x = self.conv5(x)
         x = self.flat(x)
         nop = self.dense(x)
         x = torch.cat([x, nop], 1)
-        return func.softmax(x)
+        return func.softmax(x, 1)
 

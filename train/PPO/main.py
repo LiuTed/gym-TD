@@ -1,7 +1,6 @@
 import PPO
 import Net
 import Param
-import EpsScheduler
 import gym
 from gym import logger, wrappers
 import gym_TD
@@ -10,6 +9,7 @@ import numpy as np
 from tensorboardX import SummaryWriter
 import argparse
 import time
+import os
 
 def game_loop(env, ppo, writer, title, train = True):
     state = env.reset()
@@ -115,7 +115,7 @@ def train(env_name, map_size, logdir, restore, ckpt):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-d', '--logdir', type=str, help='the directory for logs', default='./log')
-    parser.add_argument('-c', '--checkpoint', type=str, help='the name of checkpoint', default='net.pkl')
+    parser.add_argument('-c', '--checkpoint', type=str, help='the name of checkpoint', default='ckpt')
     parser.add_argument('-r', '--restore', action='store_true', help='load checkpoint')
     parser.add_argument('-t', '--test', action='store_true', help='run test')
     parser.add_argument('-e', '--env', type=str, help='gym environment', default='TD-def-v0')
@@ -128,6 +128,9 @@ if __name__ == '__main__':
     if not args.env.startswith('TD'):
         print('Unknown environment', args.env)
         exit(1)
+
+    if not os.path.isdir(args.checkpoint):
+        os.mkdir(args.checkpoint)
 
     if not args.test:
         train(args.env, args.map_size, args.logdir, args.restore, args.checkpoint)

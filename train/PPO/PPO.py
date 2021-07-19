@@ -73,6 +73,9 @@ class PPO(object):
         self.__rewards.append(reward)
 
     def learn(self):
+        if len(self.__states) < 1:
+            return
+        torch.autograd.set_detect_anomaly(True)
         v = self.get_value(self.__states[-1])
         discount_r = []
         for r in reversed(self.__rewards):
@@ -82,7 +85,7 @@ class PPO(object):
         s = torch.cat(self.__states, 0).to(device=Param.device)
         a = torch.cat(self.__actions, 0).to(device=Param.device)
         a.unsqueeze_(1)
-        r = torch.cat(discount_r, 0).to(device=Param.device)
+        r = torch.cat(discount_r, 0).to(device=Param.device).detach()
 
         self.actor_old.load_state_dict(self.actor.state_dict())
 
@@ -94,7 +97,7 @@ class PPO(object):
                 ratio = prob.gather(1, a) / prob_old.gather(1, a)
                 kl = torch.nn.functional.kl_div(prob_old, prob)
                 JPPO = -torch.mean(ratio * r - self.lam * kl)
-                JPPO.backward(retain_graph=True)
+                JPPO.backward()
                 self.actor_optimizer.step()
                 if kl > 4 * self.kl_target:
                     break
@@ -102,7 +105,7 @@ class PPO(object):
                 self.critic_optimizer.zero_grad()
                 v = self.critic(s)
                 LBL = torch.nn.functional.mse_loss(r, v)
-                LBL.backward(retain_graph=True)
+                LBL.backward()
                 self.critic_optimizer.step()
             prob = self.actor(s)
             prob_old = self.actor_old(s)
@@ -114,7 +117,7 @@ class PPO(object):
             self.lam = np.clip(self.lam, 1e-4, 10)
 
         elif Param.PPO_VERSION == 2:
-            prob_old = self.actor_old(s)
+            prob_old = self.actor_old(s).detach()
             for _ in range(Param.ACTOR_UPDATE_LOOP):
                 self.actor_optimizer.zero_grad()
                 prob = self.actor(s)
@@ -123,19 +126,19 @@ class PPO(object):
                     ratio * r,
                     torch.clip(ratio, 1-self.trunc_eps, 1+self.trunc_eps) * r
                 ))
-                JPPO.backward(retain_graph=True)
+                JPPO.backward()
                 self.actor_optimizer.step()
             for _ in range(Param.CRITIC_UPDATE_LOOP):
                 self.critic_optimizer.zero_grad()
                 v = self.critic(s)
                 LBL = torch.nn.functional.mse_loss(r, v)
-                LBL.backward(retain_graph=True)
+                LBL.backward()
                 self.critic_optimizer.step()
         
         self.__states = []
         self.__actions = []
         self.__rewards = []
-        self.step += 1
+        self.__step += 1
 
         return JPPO, LBL
 
