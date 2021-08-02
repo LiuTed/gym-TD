@@ -28,21 +28,26 @@ def game_loop(env, ppo, writer, title, train = True):
             win = info['Win']
         else:
             next_state = torch.Tensor([next_state.transpose(2, 0, 1)])
-        ppo.record(state, action, reward)
-        state = next_state
+        if not done:
+            ppo.record(state, action, reward)
         if train:
             if done or ppo.n_record % Param.BATCH_SIZE == 0:
-                JPPO, LBL = ppo.learn()
-                jppos.append(JPPO)
-                lbls.append(LBL)
+                if done:
+                    JPPO, LBL = ppo.learn(state)
+                else:
+                    JPPO, LBL = ppo.learn(next_state)
             else:
                 JPPO, LBL = None, None
         else:
             JPPO, LBL = None, None
+
+        state = next_state
         step += 1
         total_reward += reward
         writer.add_scalar(title+'/reward', reward, ppo.step)
         if JPPO is not None:
+            jppos.append(JPPO)
+            lbls.append(LBL)
             writer.add_scalar(title+'/JPPO', JPPO, ppo.step)
             writer.add_scalar(title+'/LBL', LBL, ppo.step)
     writer.add_scalar(title+'/length', step, ppo.step)

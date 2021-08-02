@@ -17,10 +17,10 @@ class FCN(nn.Module):
         self.conv3 = nn.Conv2d(256, 512, 3, padding='same')
         self.bn3 = nn.BatchNorm2d(512)
 
-        self.conv4 = nn.Conv2d(512, 1024, 1)
+        self.conv4 = nn.Conv2d(512, 512, 1)
         self.pool4 = nn.MaxPool2d([h, w])
         # self.dense1 = nn.Linear(self.size3[0]*self.size3[1]*64, 128)
-        self.dense2 = nn.Linear(1024, out)
+        self.dense2 = nn.Linear(512, out)
 
         if out_prob:
             self.activ = nn.Softmax(1)

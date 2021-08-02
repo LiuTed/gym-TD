@@ -12,6 +12,8 @@ class PPO(object):
     ):
         self.actor = actor
         self.actor_old = actor_old
+        self.actor_old.train(False)
+        self.actor_old.requires_grad_(False)
         self.critic = critic
 
         self.actor_optimizer = torch.optim.Adam(
@@ -72,25 +74,25 @@ class PPO(object):
         self.__actions.append(action)
         self.__rewards.append(reward)
 
-    def learn(self):
+    def learn(self, last):
         if len(self.__states) < 1:
-            return
-        torch.autograd.set_detect_anomaly(True)
-        v = self.get_value(self.__states[-1])
-        discount_r = []
-        for r in reversed(self.__rewards):
-            v = r + Param.GAMMA * v
-            discount_r.append(v)
-        discount_r.reverse()
-        s = torch.cat(self.__states, 0).to(device=Param.device)
-        a = torch.cat(self.__actions, 0).to(device=Param.device)
-        a.unsqueeze_(1)
-        r = torch.cat(discount_r, 0).to(device=Param.device).detach()
+            return None, None
+        with torch.no_grad():
+            v = self.get_value(last)
+            discount_r = []
+            for r in reversed(self.__rewards):
+                v = r + Param.GAMMA * v
+                discount_r.append(v)
+            discount_r.reverse()
+            s = torch.cat(self.__states, 0).to(device=Param.device)
+            a = torch.cat(self.__actions, 0).to(device=Param.device)
+            a.unsqueeze_(1)
+            r = torch.cat(discount_r, 0).to(device=Param.device)
 
         self.actor_old.load_state_dict(self.actor.state_dict())
 
         if Param.PPO_VERSION == 1:
-            prob_old = self.actor_old(s)
+            prob_old = self.actor_old(s).detach() + 1e-3
             for _ in range(Param.ACTOR_UPDATE_LOOP):
                 self.actor_optimizer.zero_grad()
                 prob = self.actor(s)
@@ -117,7 +119,7 @@ class PPO(object):
             self.lam = np.clip(self.lam, 1e-4, 10)
 
         elif Param.PPO_VERSION == 2:
-            prob_old = self.actor_old(s).detach()
+            prob_old = self.actor_old(s).detach() + 1e-3
             for _ in range(Param.ACTOR_UPDATE_LOOP):
                 self.actor_optimizer.zero_grad()
                 prob = self.actor(s)
