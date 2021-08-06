@@ -1,0 +1,13 @@
+{
+    "batch_size": 64,
+    "learning_rate": 2e-3,
+    "gamma": 0.99,
+    "memory_size": 50000,
+    "update_interval": 200,
+    
+    "timesteps_per_loop": 10000,
+    "total_loops": 100,
+    "test_episode": 20,
+    
+    "debug": 1
+}

@@ -41,7 +41,7 @@ class FCN(nn.Module):
         return self.model(x)
 
 class UNet(nn.Module):
-    def __init__(self, cin, h, w):
+    def __init__(self, cin, h, w, out_prob = True):
         super(UNet, self).__init__()
         def down_conv(id, ks, in_c, out_c):
             setattr(self, 'conv{}_1'.format(id), nn.Conv2d(in_c, out_c, ks, padding='same'))
@@ -70,6 +70,11 @@ class UNet(nn.Module):
         self.conv5 = nn.Conv2d(64, 4, 1)
         self.flat = nn.Flatten()
         self.dense = nn.Linear(4*oh*ow, 1)
+
+        if out_prob:
+            self.activ = nn.Softmax(1)
+        else:
+            self.activ = nn.Identity()
     
     def forward(self, x):
         x = func.relu(self.conv0(x))
@@ -91,5 +96,5 @@ class UNet(nn.Module):
         x = self.flat(x)
         nop = self.dense(x)
         x = torch.cat([x, nop], 1)
-        return func.softmax(x, 1)
+        return self.activ(x)
 
