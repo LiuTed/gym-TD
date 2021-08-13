@@ -4,7 +4,6 @@ from gym_TD import logger
 import os
 
 class PPO(object):
-    SAVING_STATES = ['__step']
     def __init__(
         self,
         actor, actor_old, critic,
@@ -68,7 +67,7 @@ class PPO(object):
         self.__critic.load_state_dict(torch.load(ckpt+'/critic.pkl'))
         d = torch.load(ckpt+'/model.pkl')
         logger.debug('P', 'PPO: {} -> {}', d, self.__dict__)
-        self.__dict__.update(d)
+        self.__step = d['step']
         logger.verbose('P', 'PPO: restored')
     
     def save(self, ckpt):
@@ -76,7 +75,7 @@ class PPO(object):
         torch.save(self.__actor.state_dict(), ckpt+'/actor.pkl')
         torch.save(self.__actor_old.state_dict(), ckpt+'/actor_old.pkl')
         torch.save(self.__critic.state_dict(), ckpt+'/critic.pkl')
-        torch.save({k: self.__dict__[k] for k in self.SAVING_STATES}, ckpt+'/model.pkl')
+        torch.save({'step': self.step}, ckpt+'/model.pkl')
         logger.verbose('P', 'PPO: saved')
 
     def get_action(self, state):
