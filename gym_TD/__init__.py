@@ -1,32 +1,33 @@
 from gym.envs.registration import register
+from gym_TD.utils import logger
 from gym_TD.envs.TDParam import getConfig, paramConfig, getHyperParameters, hyper_parameters
 
-__version__ = "0.3.3"
+__version__ = "0.4.1"
 
 register(
     id='TD-def-small-v0',
-    entry_point='gym_TD.envs:TDSingle',
+    entry_point='gym_TD.envs:TDDefense',
     kwargs={'map_size': 10},
     max_episode_steps=hyper_parameters.max_episode_steps
 )
 
 register(
     id='TD-def-middle-v0',
-    entry_point='gym_TD.envs:TDSingle',
+    entry_point='gym_TD.envs:TDDefense',
     kwargs={'map_size': 20},
     max_episode_steps=hyper_parameters.max_episode_steps
 )
 
 register(
     id='TD-def-large-v0',
-    entry_point='gym_TD.envs:TDSingle',
+    entry_point='gym_TD.envs:TDDefense',
     kwargs={'map_size': 30},
     max_episode_steps=hyper_parameters.max_episode_steps
 )
 
 register(
     id='TD-def-v0',
-    entry_point='gym_TD.envs:TDSingle',
+    entry_point='gym_TD.envs:TDDefense',
     max_episode_steps=hyper_parameters.max_episode_steps
 )
 

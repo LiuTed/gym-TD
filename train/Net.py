@@ -3,45 +3,82 @@ import torch.nn as nn
 import torch.nn.functional as func
 import numpy as np
 
-class FCN(nn.Module):
-    def __init__(self, cin, h, w, out, out_prob = True):
-        super(FCN, self).__init__()
-        self.conv1 = nn.Conv2d(cin, 128, 5, padding='same')
-        self.bn1 = nn.BatchNorm2d(128)
-
-        self.conv2 = nn.Conv2d(128, 256, 5, padding='same')
-        self.pool2 = nn.MaxPool2d(2)
-        self.bn2 = nn.BatchNorm2d(256)
-        h, w = h//2, w//2
-
-        self.conv3 = nn.Conv2d(256, 512, 3, padding='same')
-        self.bn3 = nn.BatchNorm2d(512)
-
-        self.conv4 = nn.Conv2d(512, 512, 1)
-        self.pool4 = nn.MaxPool2d([h, w])
-        # self.dense1 = nn.Linear(self.size3[0]*self.size3[1]*64, 128)
-        self.dense2 = nn.Linear(512, out)
-
-        if out_prob:
-            self.activ = nn.Softmax(1)
-        else:
-            self.activ = nn.Identity()
-
-        self.model = nn.Sequential(
-            self.conv1, nn.ReLU(), self.bn1,
-            self.conv2, self.pool2, nn.ReLU(), self.bn2,
-            self.conv3, nn.ReLU(), self.bn3,
-            self.conv4, self.pool4, nn.ReLU(),
-            nn.Flatten(),
-            self.dense2,
-            self.activ
-        )
+class View(nn.Module):
+    # https://github.com/pytorch/vision/issues/720
+    def __init__(self, shape):
+        super().__init__()
+        self.shape = shape
 
     def forward(self, x):
-        return self.model(x)
+        return x.view(*self.shape)
+
+class FCN(nn.Module):
+    def __init__(
+            self,
+            cin, h, w,
+            prob_out,
+            value_out,
+            kernels=[5,5,3],
+            channels=[128,256,512],
+            pools=[False,True,False]
+        ):
+        assert len(kernels) == len(channels) == len(pools), 'FCN: the length of kernels, channels and pools must be the same (input: kernels: {}, channels: {}, pools: {})'.format(kernels, channels, pools)
+        super(FCN, self).__init__()
+
+        layers = []
+        lastc = cin
+        for k, c, p in zip(kernels, channels, pools):
+            layers.append(nn.Conv2d(lastc, c, k, padding='same'))
+            if p:
+                layers.append(nn.MaxPool2d(2))
+                h, w = h//2, w//2
+            layers.append(nn.ReLU())
+            layers.append(nn.BatchNorm2d(c))
+            lastc = c
+        
+        layers.append(nn.MaxPool2d([h, w]))
+        layers.append(nn.Flatten())
+
+        self.shared = nn.Sequential(*layers)
+
+        if prob_out is not None:
+            self.prob_model = nn.Sequential(
+                nn.Linear(channels[-1], np.prod(prob_out)),
+                View([-1, *prob_out]),
+                nn.Softmax(1)
+            )
+        
+        if value_out is not None:
+            self.value_model = nn.Sequential(
+                nn.Linear(channels[-1], np.prod(value_out)),
+                View([-1, *value_out])
+            )
+
+    def forward(self, x):
+        x = self.shared(x)
+        prob_model = getattr(self, 'prob_model', None)
+        value_model = getattr(self, 'value_model', None)
+        ret = []
+        if prob_model is not None:
+            ret.append(prob_model(x))
+        if value_model is not None:
+            ret.append(value_model(x))
+
+        if len(ret) == 1:
+            return ret[0]
+        else:
+            return ret
 
 class UNet(nn.Module):
-    def __init__(self, cin, h, w, out_prob = True):
+    def __init__(
+            self,
+            cin, ccomp, h, w,
+            prob_out,
+            value_out,
+            kernels=[3,3,3,1],
+            channels=[64,128,256,512]
+        ):
+        assert len(kernels) == len(channels), 'UNet: the length of kernels and channels must be the same (input: kernels: {}, channels: {})'.format(kernels, channels)
         super(UNet, self).__init__()
         def down_conv(id, ks, in_c, out_c):
             setattr(self, 'conv{}_1'.format(id), nn.Conv2d(in_c, out_c, ks, padding='same'))
@@ -56,45 +93,85 @@ class UNet(nn.Module):
 
         oh, ow = h, w
 
-        self.conv0 = nn.Conv2d(cin, 32, 1)
-        down_conv(1, 5, 32, 64)
-        up_conv(1, 3, 128, 64, 64, [h%2, w%2])
-        h, w = h//2, w//2
-        down_conv(2, 3, 64, 128)
-        up_conv(2, 3, 256, 128, 128, [h%2, w%2])
-        h, w = h//2, w//2
-        down_conv(3, 3, 128, 256)
-        up_conv(3, 3, 512, 256, 256, [h%2, w%2])
-        h, w = h//2, w//2
-        self.conv4 = nn.Conv2d(256, 512, 3, padding='same')
-        self.conv5 = nn.Conv2d(64, 4, 1)
-        self.flat = nn.Flatten()
-        self.dense = nn.Linear(4*oh*ow, 1)
+        self.prob_out = prob_out
+        self.value_out = value_out
 
-        if out_prob:
-            self.activ = nn.Softmax(1)
+        if ccomp > 0:
+            self.conv0 = nn.Conv2d(cin, ccomp, 1)
+            lastc = ccomp
         else:
-            self.activ = nn.Identity()
+            self.conv0 = nn.Identity()
+            lastc = cin
+
+        for i, (k, c) in enumerate(zip(kernels[:-1], channels[:-1])):
+            down_conv(i+1, k, lastc, c)
+            up_conv(i+1, k, channels[i+1], c, c, [h%2, w%2])
+            h, w = h//2, w//2
+            lastc = c
+
+        self.conv_bottom = nn.Conv2d(lastc, channels[-1], kernels[-1], padding='same')
+
+        self.nlayers = len(kernels)
+
+        if prob_out is not None:
+            self.conv_last = nn.Conv2d(channels[0], prob_out, 1)
+            self.flat = nn.Flatten()
+            self.dense = nn.Linear(prob_out*oh*ow, 1)
+        
+        if value_out is not None:
+            self.value_layer = nn.Sequential(
+                nn.Conv2d(channels[0], value_out, 1),
+                nn.MaxPool2d([oh, ow]),
+                nn.Flatten(),
+                nn.Linear(value_out, value_out)
+            )
     
     def forward(self, x):
         x = func.relu(self.conv0(x))
         v = {}
-        for i in [1, 2, 3]:
+        for i in range(1, self.nlayers):
             x = func.relu(getattr(self, 'conv{}_1'.format(i))(x))
             x = func.relu(getattr(self, 'conv{}_2'.format(i))(x))
             v['c{}'.format(i)] = x
             x = getattr(self, 'maxpool{}'.format(i))(x)
             x = getattr(self, 'bn{}'.format(i))(x)
-        x = func.relu(self.conv4(x))
-        for i in [3, 2, 1]:
+        x = func.relu(self.conv_bottom(x))
+        for i in reversed(range(1, self.nlayers)):
             x = func.relu(getattr(self, 'up{}'.format(i))(x))
             x = torch.cat([x, v['c{}'.format(i)]], 1)
             x = getattr(self, 'upbn{}'.format(i))(x)
             x = func.relu(getattr(self, 'upconv{}_1'.format(i))(x))
             x = func.relu(getattr(self, 'upconv{}_2'.format(i))(x))
-        x = self.conv5(x)
-        x = self.flat(x)
-        nop = self.dense(x)
-        x = torch.cat([x, nop], 1)
-        return self.activ(x)
+        
+        ret = []
+        if self.prob_out is not None:
+            prob = self.conv_last(x)
+            prob = self.flat(prob)
+            nop = self.dense(prob)
+            prob = torch.cat([prob, nop], 1)
+            prob = func.softmax(prob, 1)
+            ret.append(prob)
+        if self.value_out is not None:
+            v = self.value_layer(x)
+            ret.append(v)
+        
+        if len(ret) == 1:
+            return ret[0]
+        else:
+            return ret
 
+class NetWrapper(object):
+    def __init__(self, module, idx):
+        super().__init__()
+        self.module = module
+        self.idx = idx
+    
+    def forward(self, x):
+        ret = self.module(x)
+        return ret[self.idx]
+    
+    def __call__(self, *args, **kwargs):
+        return self.forward(*args, **kwargs)
+    
+    def __getattr__(self, name):
+        return getattr(self.module, name)

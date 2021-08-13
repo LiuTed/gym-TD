@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+from gym_TD import logger
 
 class PPO(object):
     SAVING_STATES = ['__step']
@@ -45,6 +46,8 @@ class PPO(object):
         self.__storage_ptr = 0
 
         self.__step = 0
+
+        logger.debug('P', 'state: {}; action: {}', state_shape, action_shape)
     
     @property
     def step(self):
@@ -62,17 +65,21 @@ class PPO(object):
         self.__actor.load_state_dict(torch.load(ckpt+'/actor.pkl'))
         self.__actor_old.load_state_dict(torch.load(ckpt+'/actor_old.pkl'))
         self.__critic.load_state_dict(torch.load(ckpt+'/critic.pkl'))
-        self.__dict__.update(torch.load(ckpt+'/model.pkl'))
+        d = torch.load(ckpt+'/model.pkl')
+        logger.debug('P', 'PPO: {} -> {}', d, self.__dict__)
+        self.__dict__.update(d)
+        logger.verbose('P', 'PPO: restored')
     
     def save(self, ckpt):
         torch.save(self.__actor.state_dict(), ckpt+'/actor.pkl')
         torch.save(self.__actor_old.state_dict(), ckpt+'/actor_old.pkl')
         torch.save(self.__critic.state_dict(), ckpt+'/critic.pkl')
         torch.save({k: self.__dict__[k] for k in self.SAVING_STATES}, ckpt+'/model.pkl')
+        logger.verbose('P', 'PPO: saved')
 
     def get_action(self, state):
         with torch.no_grad():
-            return self.get_prob(state).max(1)[1]
+            return self.get_prob(state).max(1)[1].numpy()
     
     def get_prob(self, state):
         return self.__actor(state.to(self.__config.device))
@@ -120,10 +127,11 @@ class PPO(object):
         for _ in range(self.__config.train_epoch):
             np.random.shuffle(index)
             for start in range(0, len(index), self.__config.batch_size):
-                slice = index[start: start+self.__config.batch_size]
+                slice = index[start: min(start+self.__config.batch_size, self.n_record)]
 
                 s = torch.tensor(self.__states[slice], device=self.__config.device)
                 a = torch.tensor(self.__actions[slice], dtype=torch.int64, device=self.__config.device)
+                a.unsqueeze_(1)
                 adv = torch.tensor(self.__advs[slice], device=self.__config.device)
                 ret = torch.tensor(self.__returns[slice], device=self.__config.device)
 
@@ -137,6 +145,7 @@ class PPO(object):
 
                 prob = self.__actor(s)
                 value = self.__critic(s)
+                logger.debug('P', 'prob: {}; a: {}', prob.shape, a.shape)
                 ratio = prob.gather(1, a) / prob_old.gather(1, a)
                 surr = torch.mean(
                     torch.minimum(

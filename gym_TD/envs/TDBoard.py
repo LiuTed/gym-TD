@@ -1,9 +1,11 @@
 import numpy as np
 
-from gym import logger
 from gym.utils import seeding
 from gym.envs.classic_control import rendering
+from gym_TD.utils import logger
 from gym_TD.envs.TDParam import config, hyper_parameters
+
+from gym_TD.envs import TDRoadGen
 
 class Enemy(object):
     def __init__(self, maxLP, speed, cost, loc, t=None):
@@ -90,45 +92,39 @@ class TDBoard(object):
     '''
     The implementation of basic rule and states of TD game.
     '''
-    def __init__(self, map_size, np_random, cost_def, cost_atk, max_cost, base_LP):
+    def __init__(self, map_size, num_roads, np_random, cost_def, cost_atk, max_cost, base_LP):
         self.map_size = map_size
-        start_edge = np_random.randint(low=0, high=4) #start point at which edge
-        start_idx = np_random.randint(low=0, high=map_size-1) #location of start point
-        end_idx = np_random.randint(low=0, high=map_size-1) #location of end point
-        idx2point = [
-            lambda i: [0, i], #top
-            lambda i: [i, map_size-1], #right
-            lambda i: [map_size-1-i, 0], #left
-            lambda i: [map_size-1, map_size-1-i] #bottom
-        ] # map index to coordinate
-        self.start = idx2point[start_edge](start_idx)
-        self.end = idx2point[3-start_edge](end_idx)
-        # end point at the other side of start point
 
-        self.map = np.zeros(shape=(map_size, map_size, 3), dtype=np.int32)
-        # if road, dist to end, where to go
-        road = self.create_road(np_random)
-        last = None
-        for p in reversed(road): # from start to end
-            self.map[p[0], p[1], 0] = 1
-            if last is not None:
-                if p[0] - last[0] == 0:
-                    if p[1] - last[1] == 1:
-                        direct = 0
-                    else:
-                        direct = 1
-                elif p[0] - last[0] == 1:
-                    direct = 2
-                else:
-                    direct = 3
-                self.map[last[0], last[1], 2] = direct
-            last = p
-        dist = 0
-        for p in road: # from end to start
-            self.map[p[0], p[1], 1] = dist
-            dist += 1
+        self.map = np.zeros(shape=(map_size, map_size, 6), dtype=np.int32)
+        # is road, is road1, is road2, is road3, dist to end, where to go
+        roads = TDRoadGen.create_road(np_random, map_size, num_roads)
         
-        logger.debug('Map: ' + str(self.map))
+        self.start = [r[0] for r in roads]
+        self.end = roads[0][-1]
+
+        for i, road in enumerate(roads):
+            last = None
+            for p in road: # from start to end
+                self.map[p[0], p[1], 0] = 1
+                self.map[p[0], p[1], i+1] = 1
+                if last is not None:
+                    if p[0] - last[0] == 0:
+                        if p[1] - last[1] == 1:
+                            direct = 0
+                        else:
+                            direct = 1
+                    elif p[0] - last[0] == 1:
+                        direct = 2
+                    else:
+                        direct = 3
+                    self.map[last[0], last[1], 5] = direct
+                last = p
+            dist = 0
+            for p in reversed(road): # from end to start
+                self.map[p[0], p[1], 4] = dist
+                dist += 1
+        
+        logger.debug('B', 'Map: {}', self.map)
 
         self.cnt = np.zeros(shape=(self.map_size, self.map_size, 3), dtype=np.int32)
         # how many enemies of type [2] at location ([0], [1])
@@ -139,24 +135,52 @@ class TDBoard(object):
         self.cost_atk = cost_atk
         self.max_cost = max_cost
         self.base_LP = base_LP
+        self.max_base_LP = base_LP
 
         self.viewer = None
 
         self.steps = 0
     
     def get_states(self):
+        '''
+        Channels:
+        0: is road
+        1: is road 1
+        2: is road 2
+        3: is road 3
+        4: is end point
+        5: LP ratio of end point
+        6: is start point 1
+        7: is start point 2
+        8: is start point 3
+        9: distance to end point
+        10: is tower
+        11: defender cost
+        12: attacker cost
+        [13, 13+natk): tower atk lv is [0, natk]
+        [13+natk, 13+natk+nrange): tower range lv is [0, nrange]
+        [a, a+ol): LP ratio of enemies of type 0
+        [a+ol, a+2ol): LP ratio of enemies of type 1
+        [a+2ol, a+3ol): LP ratio of enemies of type 2
+        [a+3ol, a+4ol): distance margin of enemies of type 0
+        [a+4ol, a+5ol): distance margin of enemies of type 1
+        [a+5ol, a+6ol): distance margin of enemies of type 2
+        '''
         ptr = np.zeros(shape=(self.map_size, self.map_size, 3), dtype=np.int32)
         s = np.zeros(shape=self.state_shape, dtype=np.float32)
-        s[:,:,0] = self.map[:,:,0]
-        s[self.start[0], self.start[1], 1] = 1
-        s[self.end[0], self.end[1], 2] = 1
-        s[:,:,3] = np.full(shape=(self.map_size, self.map_size), fill_value=self.cost_def/self.max_cost, dtype=np.float32)
-        s[:,:,4] = np.full(shape=(self.map_size, self.map_size), fill_value=self.cost_atk/self.max_cost, dtype=np.float32)
+        s[:,:,0:4] = self.map[:,:,0:4]
+        s[self.end[0], self.end[1], 4] = 1
+        s[:,:,5] = self.base_LP / self.max_base_LP
+        for i, start in enumerate(self.start):
+            s[start[0], start[1], 6+i] = 1
+        s[:,:,9] = self.map[:,:,4] / np.max(self.map[:,:,4])
+        s[:,:,11] = self.cost_def/self.max_cost
+        s[:,:,12] = self.cost_atk/self.max_cost
         
-        tower_atk_base = 6
+        tower_atk_base = 13
         tower_range_base = tower_atk_base + len(config.tower_ATKUp_list) + 1
         for t in self.towers:
-            s[t.loc[0], t.loc[1], 5] = 1
+            s[t.loc[0], t.loc[1], 10] = 1
             s[t.loc[0], t.loc[1], tower_atk_base+t.atklv] = 1
             s[t.loc[0], t.loc[1], tower_range_base+t.rangelv] = 1
 
@@ -170,7 +194,7 @@ class TDBoard(object):
     
     @staticmethod
     def n_channels():
-        return 8 + len(config.tower_ATKUp_list) + len(config.tower_rangeUp_list) + hyper_parameters.enemy_overlay_limit * 6
+        return 15 + len(config.tower_ATKUp_list) + len(config.tower_rangeUp_list) + 6*hyper_parameters.enemy_overlay_limit
     @property
     def state_shape(self):
         return (self.map_size, self.map_size, self.n_channels())
@@ -178,29 +202,63 @@ class TDBoard(object):
     def is_valid_pos(self, pos):
         return pos[0] >= 0 and pos[0] < self.map_size and pos[1] >= 0 and pos[1] < self.map_size
     
-    def summon_enemy(self, t):
-        e = _create_enemy(t, self.start)
+    def summon_enemy(self, t, start_id):
+        logger.debug('B', 'summon_enemy: {}, {}', t, start_id)
+        e = _create_enemy(t, self.start[start_id])
         if self.cost_atk < e.cost:
-            logger.debug('Summon enemy {} failed due to cost shortage'.format(t))
+            logger.verbose('B', 'Summon enemy {} failed due to cost shortage', t)
             return False
-        if self.cnt[self.start[0], self.start[1], t] >= hyper_parameters.enemy_overlay_limit:
-            logger.debug('Summon enemy {} failed due to the limit of overlay unit'.format(t))
+        if self.cnt[self.start[start_id][0], self.start[start_id][1], t] >= hyper_parameters.enemy_overlay_limit:
+            logger.verbose('B', 'Summon enemy {} failed due to the limit of overlay unit', t)
             return False
-        logger.debug('Summon enemy {}'.format(t))
+        logger.debug('B', 'Summon enemy {}', t)
         self.enemies.append(e)
         self.cost_atk -= e.cost
-        self.cnt[self.start[0], self.start[1], t] += 1
+        self.cnt[self.start[start_id][0], self.start[start_id][1], t] += 1
+        return True
+    
+    def summon_cluster(self, types, start_id):
+        logger.debug('B', 'summon_cluster: {}, {}', types, start_id)
+        enemies = []
+        costs = []
+        for t in types:
+            if t == 3:
+                continue
+            e = _create_enemy(t, self.start[start_id])
+            costs.append(e.cost)
+            enemies.append(e)
+        if self.cost_atk < sum(costs):
+            logger.verbose('B', 'Summon cluster {} failed due to cost shortage', types)
+            return False
+        ut, ucnt = np.unique(types, return_counts=True)
+        for t, n in zip(ut, ucnt):
+            if t == 3:
+                continue
+            cnt = self.cnt[self.start[start_id][0], self.start[start_id][1], t]
+            if cnt + n > hyper_parameters.enemy_overlay_limit:
+                logger.verbose(
+                    'B',
+                    'Summon cluster {} failed due to the limit of overlay unit of type {} ({}+{}/{})',
+                    types, t, cnt, n, hyper_parameters.enemy_overlay_limit
+                )
+                return False
+        self.enemies += enemies
+        self.cost_atk -= sum(costs)
+        for t, n in zip(ut, ucnt):
+            if t == 3:
+                continue
+            self.cnt[self.start[start_id][0], self.start[start_id][1], t] += n
         return True
 
     def tower_build(self, loc):
         t = _create_tower(loc)
         if self.cost_def < t.cost:
-            logger.debug('Build tower ({},{}) failed due to cost shortage'.format(loc[0], loc[1]))
+            logger.verbose('B', 'Build tower ({},{}) failed due to cost shortage', loc[0], loc[1])
             return False
         if self.map[loc[0], loc[1], 0] == 1:
-            logger.debug('Cannot overlay tower at ({},{})'.format(loc[0], loc[1]))
+            logger.verbose('Cannot overlay tower at ({},{})', loc[0], loc[1])
             return False
-        logger.debug('Build tower ({},{})'.format(loc[0], loc[1]))
+        logger.debug('B', 'Build tower ({},{})', loc[0], loc[1])
         self.towers.append(t)
         self.cost_def -= t.cost
         return True
@@ -209,36 +267,36 @@ class TDBoard(object):
         for t in self.towers:
             if loc == t.loc:
                 if t.atklv >= len(config.tower_ATKUp_cost):
-                    logger.debug('Tower ATK up ({},{}) failed due to atk lv max'.format(loc[0], loc[1]))
+                    logger.verbose('B', 'Tower ATK up ({},{}) failed due to atk lv max', loc[0], loc[1])
                     return False
                 cost = config.tower_ATKUp_cost[t.atklv]
                 atkup = config.tower_ATKUp_list[t.atklv]
                 if self.cost_def < cost:
-                    logger.debug('Tower ATK up ({},{}) failed due to cost shortage'.format(loc[0], loc[1]))
+                    logger.verbose('B', 'Tower ATK up ({},{}) failed due to cost shortage', loc[0], loc[1])
                     return False
-                logger.debug('Tower ATK up ({},{})'.format(loc[0], loc[1]))
+                logger.debug('B', 'Tower ATK up ({},{})', loc[0], loc[1])
                 self.cost_def -= cost
                 t.atkUp(atkup, cost)
                 return True
-        logger.debug('No tower at ({},{})'.format(loc[0], loc[1]))
+        logger.verbose('No tower at ({},{})', loc[0], loc[1])
         return False
 
     def tower_rangeup(self, loc):
         for t in self.towers:
             if loc == t.loc:
                 if t.rangelv >= len(config.tower_rangeUp_cost):
-                    logger.debug('Tower range up ({},{}) failed due to range lv max'.format(loc[0], loc[1]))
+                    logger.verbose('B', 'Tower range up ({},{}) failed due to range lv max', loc[0], loc[1])
                     return False
                 cost = config.tower_rangeUp_cost[t.rangelv]
                 rangeup = config.tower_rangeUp_list[t.rangelv]
                 if self.cost_def < cost:
-                    logger.debug('Tower range up ({},{}) failed due to cost shortage'.format(loc[0], loc[1]))
+                    logger.verbose('B', 'Tower range up ({},{}) failed due to cost shortage', loc[0], loc[1])
                     return False
-                logger.debug('Tower range up ({},{})'.format(loc[0], loc[1]))
+                logger.debug('B', 'Tower range up ({},{})', loc[0], loc[1])
                 self.cost_def -= cost
                 t.rangeUp(rangeup, cost)
                 return True
-        logger.debug('No tower at ({},{})'.format(loc[0], loc[1]))
+        logger.verbose('B', 'No tower at ({},{})', loc[0], loc[1])
         return False
 
     def tower_destruct(self, loc):
@@ -246,9 +304,9 @@ class TDBoard(object):
             if loc == t.loc:
                 self.cost_def += t.cost * config.tower_destruct_return
                 self.towers.remove(t)
-                logger.debug('Destruct tower ({},{})'.format(loc[0], loc[1]))
+                logger.debug('B', 'Destruct tower ({},{})', loc[0], loc[1])
                 return True
-        logger.debug('No tower at ({},{})'.format(loc[0], loc[1]))
+        logger.verbose('B', 'No tower at ({},{})', loc[0], loc[1])
         return False
     
     def step(self):
@@ -259,7 +317,7 @@ class TDBoard(object):
         reward = 0.
         reward += config.reward_time
         self.steps += 1
-        logger.debug('Step: {}->{}'.format(self.steps-1, self.steps))
+        logger.debug('B', 'Step: {}->{}', self.steps-1, self.steps)
         for t in self.towers:
             t.cd -= 1
             if t.cd > 0: # attack cool down
@@ -268,14 +326,17 @@ class TDBoard(object):
             for e in self.enemies:
                 if dist(e.loc, t.loc) <= t.rge:
                     attackable.append(e)
-            attackable.sort(key=lambda x: self.map[x.loc[0], x.loc[1]][1] - x.margin)
+            attackable.sort(key=lambda x: self.map[x.loc[0], x.loc[1]][4] - x.margin)
             if len(attackable) > 0:
                 e = attackable[0]
                 e.damage(t.atk)
                 t.cd = config.tower_attack_interval
-                logger.debug('Attack: ({},{})->({},{},{},{})'.format(t.loc[0], t.loc[1], e.loc[0], e.loc[1], e.margin, e.type))
+                logger.debug('B',
+                    'Attack: ({},{})->({},{},{},{})',
+                    t.loc[0], t.loc[1], e.loc[0], e.loc[1], e.margin, e.type
+                )
                 if not e.alive:
-                    logger.debug('Kill')
+                    logger.debug('B', 'Kill')
                     self.enemies.remove(e)
                     reward += config.reward_kill
 
@@ -286,7 +347,7 @@ class TDBoard(object):
             while e.margin >= 1.:
                 # move to next grid
                 e.margin -= 1.
-                d = self.map[e.loc[0], e.loc[1], 2]
+                d = self.map[e.loc[0], e.loc[1], 5]
                 p = [
                     e.loc[0] + dp[d][0],
                     e.loc[1] + dp[d][1]
@@ -296,10 +357,10 @@ class TDBoard(object):
                 self.cnt[p[0], p[1], e.type] += 1
                 if e.loc == self.end:
                     reward -= config.penalty_leak
-                    logger.debug('Leak {}'.format(e.type))
+                    logger.debug('B', 'Leak {}', e.type)
                     toremove.append(e)
                     if self.base_LP is not None:
-                        logger.debug('LP: {} -> {}'.format(self.base_LP, max(self.base_LP-1, 0)))
+                        logger.debug('B', 'LP: {} -> {}', self.base_LP, max(self.base_LP-1, 0))
                         self.base_LP = max(self.base_LP-1, 0)
                     break
         for e in toremove:
@@ -308,57 +369,12 @@ class TDBoard(object):
         
         self.cost_atk = min(self.cost_atk+config.attacker_cost_rate, self.max_cost)
         self.cost_def = min(self.cost_def+config.defender_cost_rate, self.max_cost)
-        logger.debug('Reward: {}'.format(reward))
+        logger.debug('B', 'Reward: {}', reward)
         return reward
     
     def done(self):
         return (self.base_LP is not None and self.base_LP <= 0) \
             or self.steps >= hyper_parameters.max_episode_steps
-
-    def create_road(self, np_random):
-        # Return a random list of points from end point to start point.
-        class Point(object):
-            def __init__(self, pos, dist, prev=None):
-                self.pos = pos
-                self.dist = dist
-                self.prev = prev
-        _dp = [[0,1], [0,-1], [1,0], [-1,0]]
-
-        height = np_random.randint(low=1, high=100, size=(self.map_size, self.map_size))
-        # height map, used for create actual map
-
-        dist = np.full((self.map_size, self.map_size), 101*self.map_size*self.map_size)
-        dist[self.start[0], self.start[1]] = 0
-        queue = [Point(self.start, 0)]
-
-        while len(queue) > 0:
-            p = queue[0]
-            if p.pos == self.end:
-                break
-            queue.remove(p)
-            for i in range(4):
-                cord = [
-                    p.pos[0] + _dp[i][0],
-                    p.pos[1] + _dp[i][1]
-                ]
-                if cord[0] < 0 or cord[0] >= self.map_size \
-                    or cord[1] < 0 or  cord[1] >= self.map_size:
-                    continue # out of range
-                if p.dist != dist[p.pos[0], p.pos[1]]: #updated
-                    continue
-                if p.dist + height[cord[0], cord[1]] \
-                     < dist[cord[0], cord[1]]:
-                    dist[cord[0], cord[1]] = \
-                        p.dist + height[cord[0], cord[1]]
-                    queue.append(Point(cord, dist[cord[0], cord[1]], p))
-                    queue.sort(key=lambda p: p.dist) #Dijkstra
-        p = queue[0]
-        road = []
-        while p.prev is not None:
-            road.append(p.pos)
-            p = p.prev
-        road.append(self.start)
-        return road
     
     def render(self, mode):
         screen_width = 600
@@ -405,17 +421,18 @@ class TDBoard(object):
                         self.viewer.add_geom(road)
             # draw road
             
-            left, right, top, bottom = \
-                screen_width * self.start[1] // self.map_size, \
-                screen_width * (self.start[1]+1) // self.map_size, \
-                screen_height * (self.start[0]+1) // self.map_size, \
-                screen_height * self.start[0] // self.map_size
-            startpoint = rendering.FilledPolygon([
-                (left, bottom), (left, top),
-                (right, top), (right, bottom)
-            ])
-            startpoint.set_color(1, 0, 0) #red
-            self.viewer.add_geom(startpoint)
+            for start in self.start:
+                left, right, top, bottom = \
+                    screen_width * start[1] // self.map_size, \
+                    screen_width * (start[1]+1) // self.map_size, \
+                    screen_height * (start[0]+1) // self.map_size, \
+                    screen_height * start[0] // self.map_size
+                startpoint = rendering.FilledPolygon([
+                    (left, bottom), (left, top),
+                    (right, top), (right, bottom)
+                ])
+                startpoint.set_color(1, 0, 0) #red
+                self.viewer.add_geom(startpoint)
             # draw startpoint
             left, right, top, bottom = \
                 screen_width * self.end[1] // self.map_size, \

@@ -2,10 +2,9 @@ from setuptools import setup
 
 setup(
     name="gym_TD",
-    version="0.3.3",
+    version="0.4.1",
     url="https://github.com/liuted/gym-TD",
     author="Taide Liu",
-    packages=["gym_TD", "gym_TD.envs"],
-    install_requires = ["gym", "numpy"],
-    dependency_links = ["https://mirrors.ustc.edu.cn/pypi/web/simple"]
+    packages=["gym_TD", "gym_TD.envs", "gym_TD.utils"],
+    install_requires = ["gym", "numpy>=1.9.0", "tqdm"]
 )
