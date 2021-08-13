@@ -295,7 +295,7 @@ if __name__ == "__main__":
         logger.set_level(logger.ERROR)
         gym_logger.set_level(gym_logger.ERROR)
         import warnings
-        warnings.simplefilter('error')
+        warnings.simplefilter('ignore')
     else:
         logger.set_level(logger.INFO)
     

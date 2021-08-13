@@ -79,7 +79,7 @@ class PPO(object):
 
     def get_action(self, state):
         with torch.no_grad():
-            return self.get_prob(state).max(1)[1].numpy()
+            return self.get_prob(state).max(1)[1].cpu().numpy()
     
     def get_prob(self, state):
         return self.__actor(state.to(self.__config.device))
@@ -97,18 +97,18 @@ class PPO(object):
     def flush(self, next_state):
         last_gae = 0.
         with torch.no_grad():
-            traj_values = self.get_value(torch.Tensor(self.__traj_states))
-            advs = np.zeros_like(self.__advs)
+            traj_values = self.get_value(torch.Tensor(self.__traj_states)).cpu().numpy()
+            advs = np.zeros_like(traj_values)
             returns = np.zeros_like(advs)
             for i in reversed(range(self.len_trajectory)):
                 next_nonterminal = 1.0 - self.__traj_dones[i]
                 if i == self.len_trajectory - 1:
-                    next_value = self.get_value(next_state)
+                    next_value = self.get_value(next_state).item()
                 else:
                     next_value = traj_values[i + 1]
                 delta = self.__traj_rewards[i] + self.__config.gamma * next_value * next_nonterminal - traj_values[i]
                 advs[i] = last_gae = delta + self.__config.gamma * self.__config.lam * next_nonterminal * last_gae
-            returns = advs + np.asarray(traj_values)
+            returns = advs + traj_values
 
         ptr0, ptr1 = self.__storage_ptr, self.__storage_ptr + self.__config.horizon
         self.__states[ptr0: ptr1] = self.__traj_states
