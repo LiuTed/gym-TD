@@ -4,6 +4,7 @@ import Config
 import torch
 import numpy as np
 import json
+import os
 
 import gym
 from gym import wrappers
@@ -334,6 +335,9 @@ if __name__ == "__main__":
         model = DQN_model(env, args.map_size, config)
         train_callback = DQN_train
         loss_callback = DQN_loss_parse
+    
+    if not os.path.isdir(args.checkpoint):
+        os.mkdir(args.checkpoint)
     
     if args.restore:
         model.restore(args.checkpoint)

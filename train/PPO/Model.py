@@ -1,7 +1,6 @@
 import torch
 import numpy as np
 from gym_TD import logger
-import os
 
 class PPO(object):
     def __init__(
@@ -71,7 +70,6 @@ class PPO(object):
         logger.verbose('P', 'PPO: restored')
     
     def save(self, ckpt):
-        os.mkdir(ckpt)
         torch.save(self.__actor.state_dict(), ckpt+'/actor.pkl')
         torch.save(self.__actor_old.state_dict(), ckpt+'/actor_old.pkl')
         torch.save(self.__critic.state_dict(), ckpt+'/critic.pkl')
