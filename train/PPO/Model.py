@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 from gym_TD import logger
+import os
 
 class PPO(object):
     SAVING_STATES = ['__step']
@@ -71,6 +72,7 @@ class PPO(object):
         logger.verbose('P', 'PPO: restored')
     
     def save(self, ckpt):
+        os.mkdir(ckpt)
         torch.save(self.__actor.state_dict(), ckpt+'/actor.pkl')
         torch.save(self.__actor_old.state_dict(), ckpt+'/actor_old.pkl')
         torch.save(self.__critic.state_dict(), ckpt+'/critic.pkl')
@@ -145,8 +147,9 @@ class PPO(object):
 
                 prob = self.__actor(s)
                 value = self.__critic(s)
-                logger.debug('P', 'prob: {}; a: {}', prob.shape, a.shape)
+                logger.debug('P', 'prob: {}; a: {}; adv: {}', prob.shape, a.shape, adv.shape)
                 ratio = prob.gather(1, a) / prob_old.gather(1, a)
+                adv = adv.reshape([-1, *[1 for x in range(1, ratio.ndim)]])
                 surr = torch.mean(
                     torch.minimum(
                         ratio * adv,
