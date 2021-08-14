@@ -45,7 +45,7 @@ class FCN(nn.Module):
             self.prob_model = nn.Sequential(
                 nn.Linear(channels[-1], np.prod(prob_out)),
                 View([-1, *prob_out]),
-                nn.Softmax(1)
+                nn.LogSoftmax(1)
             )
         
         if value_out is not None:
@@ -117,6 +117,7 @@ class UNet(nn.Module):
             self.conv_last = nn.Conv2d(channels[0], prob_out, 1)
             self.flat = nn.Flatten()
             self.dense = nn.Linear(prob_out*oh*ow, 1)
+            self.logsoftmax = nn.LogSoftmax(1)
         
         if value_out is not None:
             self.value_layer = nn.Sequential(
@@ -149,7 +150,7 @@ class UNet(nn.Module):
             prob = self.flat(prob)
             nop = self.dense(prob)
             prob = torch.cat([prob, nop], 1)
-            prob = func.softmax(prob, 1)
+            prob = self.logsoftmax(prob)
             ret.append(prob)
         if self.value_out is not None:
             v = self.value_layer(x)

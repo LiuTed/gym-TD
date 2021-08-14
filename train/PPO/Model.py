@@ -1,3 +1,4 @@
+from os import getpgid
 import torch
 import numpy as np
 from gym_TD import logger
@@ -5,30 +6,37 @@ from gym_TD import logger
 class PPO(object):
     def __init__(
         self,
-        actor, actor_old, critic, is_single_net,
+        actor, critic, actor_critic,
         state_shape, action_shape,
         config
     ):
-        self.__actor = actor
-        self.__actor_old = actor_old
-        self.__actor_old.train(False)
-        self.__actor_old.requires_grad_(False)
-        self.__actor_old.load_state_dict(self.__actor.state_dict())
-        self.__critic = critic
-
-        self.__actor_optimizer = torch.optim.Adam(
-            self.__actor.parameters(),
-            lr = config.actor_learning_rate,
-            weight_decay = 0.001,
-            amsgrad = True
-        )
-
-        self.__critic_optimizer = torch.optim.Adam(
-            self.__critic.parameters(),
-            lr = config.critic_learning_rate,
-            weight_decay = 0.001,
-            amsgrad = True
-        )
+        if actor is not None and critic is not None:
+            self.__actor = actor
+            self.__critic = critic
+            self.__actor_optimizer = torch.optim.Adam(
+                self.__actor.parameters(),
+                lr = config.actor_learning_rate,
+                weight_decay = 0.001,
+                amsgrad = True
+            )
+            self.__critic_optimizer = torch.optim.Adam(
+                self.__critic.parameters(),
+                lr = config.critic_learning_rate,
+                weight_decay = 0.001,
+                amsgrad = True
+            )
+            self.__unified = False
+        elif actor_critic is not None:
+            self.__actor_critic = actor_critic
+            self.__optimizer = torch.optim.Adam(
+                self.__actor_critic.parameters(),
+                lr = config.learning_rate,
+                weight_decay = 0.001,
+                amsgrad = True
+            )
+            self.__unified = True
+        else:
+            raise ValueError('PPO: one of (actor, critic) or actor_critic must be specified')
 
         self.__config = config
 
@@ -42,10 +50,10 @@ class PPO(object):
         self.__actions = np.zeros(shape=(config.horizon*config.num_actors, *action_shape), dtype=np.int64)
         self.__advs = np.zeros(shape=(config.horizon*config.num_actors, 1), dtype=np.float32)
         self.__returns = np.zeros_like(self.__advs)
+        self.__logp = np.zeros(shape=(config.horizon*config.num_actors, 1, *action_shape), dtype=np.float32)
         self.__storage_ptr = 0
 
         self.__step = 0
-        self.__is_single_net = is_single_net
 
         logger.debug('P', 'state: {}; action: {}', state_shape, action_shape)
     
@@ -63,23 +71,32 @@ class PPO(object):
     
     def restore(self, ckpt):
         d = torch.load(ckpt+'/model.pkl')
-        self.__actor.load_state_dict(d['actor'])
-        self.__actor_old.load_state_dict(d['actor_old'])
-        self.__critic.load_state_dict(d['critic'])
-        self.__actor_optimizer.load_state_dict(d['actor_optim'])
-        self.__critic_optimizer.load_state_dict(d['critic_optim'])
+        if self.__unified:
+            self.__actor_critic.load_state_dict(d['actor_critic'])
+            self.__optimizer.load_state_dict(d['optim'])
+        else:
+            self.__actor.load_state_dict(d['actor'])
+            self.__critic.load_state_dict(d['critic'])
+            self.__actor_optimizer.load_state_dict(d['actor_optim'])
+            self.__critic_optimizer.load_state_dict(d['critic_optim'])
         self.__step = d['step']
         logger.verbose('P', 'PPO: restored')
     
     def save(self, ckpt):
-        d = {
-            'actor': self.__actor.state_dict(),
-            'actor_old': self.__actor_old.state_dict(),
-            'critic': self.__critic.state_dict(),
-            'actor_optim': self.__actor_optimizer.state_dict(),
-            'critic_optim': self.__critic_optimizer.state_dict(),
-            'step': self.step
-        }
+        if self.__unified:
+            d = {
+                'actor_critic': self.__actor_critic.state_dict(),
+                'optim': self.__optimizer.state_dict(),
+                'step': self.step
+            }
+        else:
+            d = {
+                'actor': self.__actor.state_dict(),
+                'critic': self.__critic.state_dict(),
+                'actor_optim': self.__actor_optimizer.state_dict(),
+                'critic_optim': self.__critic_optimizer.state_dict(),
+                'step': self.step
+            }
         logger.debug('P', 'Model: {}', d)
         torch.save(d, ckpt+'/model.pkl')
         logger.verbose('P', 'PPO: saved')
@@ -89,10 +106,24 @@ class PPO(object):
             return self.get_prob(state).max(1)[1].cpu().numpy()
     
     def get_prob(self, state):
-        return self.__actor(state.to(self.__config.device))
+        if self.__unified:
+            p, _ = self.__actor_critic(state.to(self.__config.device))
+            return p
+        else:
+            return self.__actor(state.to(self.__config.device))
 
     def get_value(self, state):
-        return self.__critic(state.to(self.__config.device))
+        if self.__unified:
+            _, v = self.__actor_critic(state.to(self.__config.device))
+            return v
+        else:
+            return self.__critic(state.to(self.__config.device))
+    
+    def get_p_v(self, state):
+        if self.__unified:
+            return self.__actor_critic(state.to(self.__config.device))
+        else:
+            return self.get_prob(state), self.get_value(state)
 
     def record(self, state, action, reward, done):
         self.__traj_states[self.__traj_ptr] = state
@@ -104,7 +135,13 @@ class PPO(object):
     def flush(self, next_state):
         last_gae = 0.
         with torch.no_grad():
-            traj_values = self.get_value(torch.Tensor(self.__traj_states)).cpu().numpy()
+            states = torch.tensor(self.__traj_states)
+            traj_logp, traj_values = self.get_p_v(states)
+            
+            acts = torch.tensor(self.__traj_actions).unsqueeze(1)
+            traj_logp = traj_logp.cpu().gather(1, acts).numpy()
+
+            traj_values = traj_values.cpu().numpy()
             advs = np.zeros_like(traj_values)
             returns = np.zeros_like(advs)
             for i in reversed(range(self.len_trajectory)):
@@ -121,6 +158,7 @@ class PPO(object):
         self.__states[ptr0: ptr1] = self.__traj_states
         self.__actions[ptr0: ptr1] = self.__traj_actions
         self.__advs[ptr0: ptr1] = advs
+        self.__logp[ptr0: ptr1] = traj_logp
         self.__returns[ptr0: ptr1] = returns
         
         self.__storage_ptr = ptr1
@@ -141,46 +179,19 @@ class PPO(object):
                 a.unsqueeze_(1)
                 adv = torch.tensor(self.__advs[slice], device=self.__config.device)
                 ret = torch.tensor(self.__returns[slice], device=self.__config.device)
+                log_prob_old = torch.tensor(self.__logp[slice], device=self.__config.device)
 
                 adv = (adv - torch.mean(adv)) / torch.std(adv)
 
-                if torch.any(torch.isnan(adv)).item():
-                    _a = torch.tensor(self.__advs[slice])
-                    logger.error('P',
-                        'Advantage NaN {} ({} {} {})',
-                        adv,
-                        _a, torch.mean(_a), torch.std(_a)
-                    )
-                if torch.any(torch.isinf(adv)).item():
-                    _a = torch.tensor(self.__advs[slice])
-                    logger.error('P',
-                        'Advantage Inf {} ({} {} {})',
-                        adv,
-                        _a, torch.mean(_a), torch.std(_a)
-                    )
-
-                with torch.no_grad():
-                    prob_old = self.__actor_old(s) + 1e-5
-
-                self.__actor_optimizer.zero_grad()
-                if not self.__is_single_net:
+                if self.__unified:
+                    self.__optimizer.zero_grad()
+                else:
+                    self.__actor_optimizer.zero_grad()
                     self.__critic_optimizer.zero_grad()
 
-                prob = self.__actor(s)
-                value = self.__critic(s)
-                logger.debug('P', 'prob: {}; a: {}; adv: {}', prob.shape, a.shape, adv.shape)
-                ratio = prob.gather(1, a) / prob_old.gather(1, a)
-                
-                if torch.any(torch.isnan(ratio)).item():
-                    logger.error('P',
-                        'Ratio NaN {}',
-                        ratio
-                    )
-                if torch.any(torch.isinf(ratio)).item():
-                    logger.error('P',
-                        'Ratio Inf {}',
-                        ratio
-                    )
+                log_prob, value = self.get_p_v(s)
+                logger.debug('P', 'log_prob: {}; a: {}; adv: {}', log_prob.shape, a.shape, adv.shape)
+                ratio = torch.exp(log_prob.gather(1, a) - log_prob_old)
 
                 adv = adv.reshape([-1, *[1 for x in range(1, ratio.ndim)]])
                 surr = torch.mean(
@@ -192,25 +203,26 @@ class PPO(object):
                 vf = torch.nn.functional.mse_loss(ret, value)
                 entropy = torch.mean(
                     torch.sum(
-                        - prob * torch.log(prob),
+                        - torch.exp(log_prob) * log_prob,
                         1
                     )
                 )
 
                 loss = - surr + vf * self.__config.vf_coeff - entropy * self.__config.ent_coeff
-
+                
                 if torch.isinf(loss).item() or torch.isnan(loss).item():
                     logger.error('P', 'Loss error {} ({} {} {})', loss.item(), surr.item(), vf.item(), entropy.item())
                 
                 losses.append((surr.detach(), vf.detach(), entropy.detach(), loss.detach(), self.step))
                 loss.backward()
 
-                if not self.__is_single_net:
+                if self.__unified:
+                    self.__optimizer.step()
+                else:
                     self.__critic_optimizer.step()
-                self.__actor_optimizer.step()
+                    self.__actor_optimizer.step()
 
                 self.__step += 1
 
         self.__storage_ptr = 0
-        self.__actor_old.load_state_dict(self.__actor.state_dict())
         return losses

@@ -66,16 +66,8 @@ def PPO_model(env, map_size, config):
             env.observation_space.shape[0], env.observation_space.shape[1],
             4, 1
         ).to(config.device)
-        net_old = Net.UNet(
-            env.observation_space.shape[2], 64,
-            env.observation_space.shape[0], env.observation_space.shape[1],
-            4, 1
-        ).to(config.device)
-        actor = Net.NetWrapper(net, 0)
-        actor_old = Net.NetWrapper(net_old, 0)
-        critic = Net.NetWrapper(net, 1)
         ppo = PPO.Model(
-            actor, actor_old, critic,
+            None, None, net,
             [env.observation_space.shape[2], env.observation_space.shape[0], env.observation_space.shape[1]],
             (),
             config
@@ -86,16 +78,8 @@ def PPO_model(env, map_size, config):
             env.observation_space.shape[0], env.observation_space.shape[1],
             [4, *env.action_space.shape], [1]
         ).to(config.device)
-        net_old = Net.FCN(
-            env.observation_space.shape[2],
-            env.observation_space.shape[0], env.observation_space.shape[1],
-            [4, *env.action_space.shape], [1]
-        ).to(config.device)
-        actor = Net.NetWrapper(net, 0)
-        actor_old = Net.NetWrapper(net_old, 0)
-        critic = Net.NetWrapper(net, 1)
         ppo = PPO.Model(
-            actor, actor_old, critic,
+            None, None, net,
             [env.observation_space.shape[2], env.observation_space.shape[0], env.observation_space.shape[1]],
             env.action_space.shape,
             config
