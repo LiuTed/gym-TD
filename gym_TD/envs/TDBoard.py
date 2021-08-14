@@ -170,10 +170,13 @@ class TDBoard(object):
         s = np.zeros(shape=self.state_shape, dtype=np.float32)
         s[:,:,0:4] = self.map[:,:,0:4]
         s[self.end[0], self.end[1], 4] = 1
-        s[:,:,5] = self.base_LP / self.max_base_LP
+        if self.max_base_LP is None:
+            s[:,:,5] = 1.
+        else:
+            s[:,:,5] = self.base_LP / self.max_base_LP
         for i, start in enumerate(self.start):
             s[start[0], start[1], 6+i] = 1
-        s[:,:,9] = self.map[:,:,4] / np.max(self.map[:,:,4])
+        s[:,:,9] = self.map[:,:,4] / (np.max(self.map[:,:,4])+1)
         s[:,:,11] = self.cost_def/self.max_cost
         s[:,:,12] = self.cost_atk/self.max_cost
         

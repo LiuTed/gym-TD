@@ -5,7 +5,7 @@ from gym_TD import logger
 class PPO(object):
     def __init__(
         self,
-        actor, actor_old, critic,
+        actor, actor_old, critic, is_single_net,
         state_shape, action_shape,
         config
     ):
@@ -45,6 +45,7 @@ class PPO(object):
         self.__storage_ptr = 0
 
         self.__step = 0
+        self.__is_single_net = is_single_net
 
         logger.debug('P', 'state: {}; action: {}', state_shape, action_shape)
     
@@ -61,19 +62,26 @@ class PPO(object):
         return self.__storage_ptr
     
     def restore(self, ckpt):
-        self.__actor.load_state_dict(torch.load(ckpt+'/actor.pkl'))
-        self.__actor_old.load_state_dict(torch.load(ckpt+'/actor_old.pkl'))
-        self.__critic.load_state_dict(torch.load(ckpt+'/critic.pkl'))
         d = torch.load(ckpt+'/model.pkl')
-        logger.debug('P', 'PPO: {} -> {}', d, self.__dict__)
+        self.__actor.load_state_dict(d['actor'])
+        self.__actor_old.load_state_dict(d['actor_old'])
+        self.__critic.load_state_dict(d['critic'])
+        self.__actor_optimizer.load_state_dict(d['actor_optim'])
+        self.__critic_optimizer.load_state_dict(d['critic_optim'])
         self.__step = d['step']
         logger.verbose('P', 'PPO: restored')
     
     def save(self, ckpt):
-        torch.save(self.__actor.state_dict(), ckpt+'/actor.pkl')
-        torch.save(self.__actor_old.state_dict(), ckpt+'/actor_old.pkl')
-        torch.save(self.__critic.state_dict(), ckpt+'/critic.pkl')
-        torch.save({'step': self.step}, ckpt+'/model.pkl')
+        d = {
+            'actor': self.__actor.state_dict(),
+            'actor_old': self.__actor_old.state_dict(),
+            'critic': self.__critic.state_dict(),
+            'actor_optim': self.__actor_optimizer.state_dict(),
+            'critic_optim': self.__critic_optimizer.state_dict(),
+            'step': self.step
+        }
+        logger.debug('P', 'Model: {}', d)
+        torch.save(d, ckpt+'/model.pkl')
         logger.verbose('P', 'PPO: saved')
 
     def get_action(self, state):
@@ -136,16 +144,44 @@ class PPO(object):
 
                 adv = (adv - torch.mean(adv)) / torch.std(adv)
 
+                if torch.any(torch.isnan(adv)).item():
+                    _a = torch.tensor(self.__advs[slice])
+                    logger.error('P',
+                        'Advantage NaN {} ({} {} {})',
+                        adv,
+                        _a, torch.mean(_a), torch.std(_a)
+                    )
+                if torch.any(torch.isinf(adv)).item():
+                    _a = torch.tensor(self.__advs[slice])
+                    logger.error('P',
+                        'Advantage Inf {} ({} {} {})',
+                        adv,
+                        _a, torch.mean(_a), torch.std(_a)
+                    )
+
                 with torch.no_grad():
                     prob_old = self.__actor_old(s) + 1e-5
 
                 self.__actor_optimizer.zero_grad()
-                self.__critic_optimizer.zero_grad()
+                if not self.__is_single_net:
+                    self.__critic_optimizer.zero_grad()
 
                 prob = self.__actor(s)
                 value = self.__critic(s)
                 logger.debug('P', 'prob: {}; a: {}; adv: {}', prob.shape, a.shape, adv.shape)
                 ratio = prob.gather(1, a) / prob_old.gather(1, a)
+                
+                if torch.any(torch.isnan(ratio)).item():
+                    logger.error('P',
+                        'Ratio NaN {}',
+                        ratio
+                    )
+                if torch.any(torch.isinf(ratio)).item():
+                    logger.error('P',
+                        'Ratio Inf {}',
+                        ratio
+                    )
+
                 adv = adv.reshape([-1, *[1 for x in range(1, ratio.ndim)]])
                 surr = torch.mean(
                     torch.minimum(
@@ -154,14 +190,23 @@ class PPO(object):
                     )
                 )
                 vf = torch.nn.functional.mse_loss(ret, value)
-                entropy = torch.mean(- prob * torch.log(prob))
+                entropy = torch.mean(
+                    torch.sum(
+                        - prob * torch.log(prob),
+                        1
+                    )
+                )
 
                 loss = - surr + vf * self.__config.vf_coeff - entropy * self.__config.ent_coeff
+
+                if torch.isinf(loss).item() or torch.isnan(loss).item():
+                    logger.error('P', 'Loss error {} ({} {} {})', loss.item(), surr.item(), vf.item(), entropy.item())
                 
                 losses.append((surr.detach(), vf.detach(), entropy.detach(), loss.detach(), self.step))
                 loss.backward()
 
-                self.__critic_optimizer.step()
+                if not self.__is_single_net:
+                    self.__critic_optimizer.step()
                 self.__actor_optimizer.step()
 
                 self.__step += 1
