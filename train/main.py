@@ -23,6 +23,8 @@ def strtime():
     return time.asctime(time.localtime(time.time()))
 
 def PPO_train(ppo, state, action, next_state, reward, done, info, writer, title, config):
+    if (action != info['RealAction']).any():
+        reward -= 0.3
     ppo.record(state, action, reward, done)
     if ppo.len_trajectory % config.horizon == 0:
         ppo.flush(next_state)
@@ -106,11 +108,21 @@ def DQN_model(env, map_size, config):
     import DQN
     import Net
     eps_sche = DQN.EpsScheduler(1., 'Linear', lower_bound=0.1, target_steps=200000)
-    net = Net.UNet(env.observation_space.shape[2], map_size, map_size, False).to(config.device)
+    if env.name == "TDDefense":
+        net = Net.UNet(
+            env.observation_space.shape[2], 64,
+            map_size, map_size, None, 4, value_type='dependent'
+        ).to(config.device)
+    elif env.name == "TDAttack":
+        net = Net.FCN(
+            env.observation_space.shape[0], map_size, map_size,
+            None, [4, *env.action_space.shape]
+        )
     dqn = DQN.Model(eps_sche, env.action_space.n, net, config)
     return dqn
 
 def game_loop(env, model, train_callback, loss_callback, writer, title, config):
+    env.seed(0x12345)
     state = env.reset()
     state = torch.Tensor([state.transpose(2, 0, 1)])
 

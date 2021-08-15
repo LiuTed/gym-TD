@@ -7,6 +7,7 @@ from gym_TD.envs.TDBoard import TDBoard
 from gym_TD import logger
 
 import numpy as np
+import random
 
 class TDGymBasic(gym.Env):
     metadata = {
@@ -64,13 +65,15 @@ class TDGymBasic(gym.Env):
                 
     def random_tower_lv0(self):
         if self.defender_cd == 0:
-            r, c = self.np_random.randint(0, self.map_size, [2,])
+            # r, c = self.np_random.randint(0, self.map_size, [2,])
+            r = random.randint(0, self.map_size-1)
+            c = random.randint(0, self.map_size-1)
             if self._board.tower_build([r,c]):
                 self.defender_cd = config.defender_action_interval
 
     def random_tower_lv1(self):
         if self.defender_cd == 0:
-            act = self.np_random.randint(0, 3)
+            act = random.randint(0, 2)
             if act == 0:
                 for r in range(self.map_size):
                     for c in range(self.map_size):
@@ -80,21 +83,21 @@ class TDGymBasic(gym.Env):
                                 [r-1, c+1],
                                 [r+1, c-1],
                                 [r+1, c+1]
-                            ][self.np_random.randint(4)]
+                            ][random.randint(0, 3)]
                             if self._board.is_valid_pos(pos) and self._board.tower_build(pos):
                                 self.defender_cd = config.defender_action_interval
                                 return
             elif act == 1:
                 if len(self._board.towers) == 0:
                     return
-                id = self.np_random.randint(0, len(self._board.towers))
+                id = random.randint(0, len(self._board.towers)-1)
                 if self._board.tower_atkup(self._board.towers[id].loc):
                     self.defender_cd = config.defender_action_interval
                     return
             elif act == 2:
                 if len(self._board.towers) == 0:
                     return
-                id = self.np_random.randint(0, len(self._board.towers))
+                id = random.randint(0, len(self._board.towers)-1)
                 if self._board.tower_rangeup(self._board.towers[id].loc):
                     self.defender_cd = config.defender_action_interval
                     return

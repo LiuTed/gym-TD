@@ -30,16 +30,14 @@ class TDAttack(TDGymBasic):
         self.attacker_cd = max(self.attacker_cd-1, 0)
         self.defender_cd = max(self.defender_cd-1, 0)
         
-        real_act = np.zeros_like(action)
+        real_act = np.copy(action)
         if self.attacker_cd == 0:
             for i in range(self.num_roads):
                 cluster = action[i]
                 if self._board.summon_cluster(cluster, i):
-                    real_act[i] = cluster
                     self.attacker_cd = config.attacker_action_interval
                 else:
                     real_act[i] = 3
-            real_act[self.num_roads:] = action[self.num_roads:]
         
         # self.random_tower_lv0()
         self.random_tower_lv1()

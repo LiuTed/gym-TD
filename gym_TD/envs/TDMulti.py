@@ -49,16 +49,14 @@ class TDMulti(TDGymBasic):
         atk_act = action["Attacker"]
         def_act = action["Defender"]
         if hyper_parameters.allow_multiple_actions:
-            real_act["Attacker"] = np.zeros_like(atk_act)
+            real_act["Attacker"] = np.copy(atk_act)
             if self.attacker_cd == 0:
                 for i in range(self.num_roads):
                     cluster = atk_act[i]
                     if self._board.summon_cluster(cluster, i):
-                        real_act["Attacker"][i] = cluster
                         self.attacker_cd = config.attacker_action_interval
                     else:
                         real_act["Attacker"][i] = 3
-                real_act["Attacker"][self.num_roads:] = atk_act[self.num_roads:]
 
             real_act["Defender"] = np.zeros(shape=(4, self._board.map_size, self._board.map_size), dtype=np.int64)
             if self.defender_cd == 0:
@@ -85,16 +83,14 @@ class TDMulti(TDGymBasic):
                                 self.defender_cd = config.defender_action_interval
                                 real_act["Defender"][3, r, c] = 1
         else:
-            real_act["Attacker"] = np.zeros_like(atk_act)
+            real_act["Attacker"] = np.copy(atk_act)
             if self.attacker_cd == 0:
                 for i in range(self.num_roads):
                     cluster = atk_act[i]
                     if self._board.summon_cluster(cluster, i):
-                        real_act["Attacker"][i] = cluster
                         self.attacker_cd = config.attacker_action_interval
                     else:
                         real_act["Attacker"][i] = 3
-                real_act["Attacker"][self.num_roads:] = atk_act[self.num_roads:]
 
             real_act["Defender"] = self.map_size*self.map_size*4
             if self.defender_cd == 0 and def_act != self.map_size*self.map_size*4:

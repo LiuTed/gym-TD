@@ -191,7 +191,12 @@ class PPO(object):
 
                 log_prob, value = self.get_p_v(s)
                 logger.debug('P', 'log_prob: {}; a: {}; adv: {}', log_prob.shape, a.shape, adv.shape)
-                ratio = torch.exp(log_prob.gather(1, a) - log_prob_old)
+                ratio = torch.exp(
+                    torch.clip(
+                        log_prob.gather(1, a) - log_prob_old,
+                        None, 10
+                    )
+                )
 
                 adv = adv.reshape([-1, *[1 for x in range(1, ratio.ndim)]])
                 surr = torch.mean(

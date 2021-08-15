@@ -76,7 +76,9 @@ class UNet(nn.Module):
             prob_out,
             value_out,
             kernels=[3,3,3,1],
-            channels=[64,128,256,512]
+            channels=[64,128,256,512],
+            extra_act=1,
+            value_type='independent'
         ):
         assert len(kernels) == len(channels), 'UNet: the length of kernels and channels must be the same (input: kernels: {}, channels: {})'.format(kernels, channels)
         super(UNet, self).__init__()
@@ -114,18 +116,26 @@ class UNet(nn.Module):
         self.nlayers = len(kernels)
 
         if prob_out is not None:
-            self.conv_last = nn.Conv2d(channels[0], prob_out, 1)
-            self.flat = nn.Flatten()
-            self.dense = nn.Linear(prob_out*oh*ow, 1)
+            self.prob_conv = nn.Conv2d(channels[0], prob_out, 1)
+            self.prob_flat = nn.Flatten()
+            if extra_act > 0:
+                self.prob_dense = nn.Linear(prob_out*oh*ow, extra_act)
             self.logsoftmax = nn.LogSoftmax(1)
         
         if value_out is not None:
-            self.value_layer = nn.Sequential(
-                nn.Conv2d(channels[0], value_out, 1),
-                nn.MaxPool2d([oh, ow]),
-                nn.Flatten(),
-                nn.Linear(value_out, value_out)
-            )
+            if value_type == 'independent':
+                self.value_layer = nn.Sequential(
+                    nn.Conv2d(channels[0], value_out, 1),
+                    nn.MaxPool2d([oh, ow]),
+                    nn.Flatten(),
+                    nn.Linear(value_out, value_out)
+                )
+            elif value_type == 'dependent':
+                self.value_conv = nn.Conv2d(channels[0], value_out, 1)
+                self.value_flat = nn.Flatten()
+                if extra_act > 0:
+                    self.value_dense = nn.Linear(value_out*oh*ow, extra_act)
+                    
     
     def forward(self, x):
         x = func.relu(self.conv0(x))
@@ -146,15 +156,25 @@ class UNet(nn.Module):
         
         ret = []
         if self.prob_out is not None:
-            prob = self.conv_last(x)
-            prob = self.flat(prob)
-            nop = self.dense(prob)
-            prob = torch.cat([prob, nop], 1)
+            prob = self.prob_conv(x)
+            prob = self.prob_flat(prob)
+            if getattr(self, 'prob_dense', None) is not None:
+                nop = self.prob_dense(prob)
+                prob = torch.cat([prob, nop], 1)
             prob = self.logsoftmax(prob)
             ret.append(prob)
         if self.value_out is not None:
-            v = self.value_layer(x)
-            ret.append(v)
+            value_layer = getattr(self, 'value_layer', None)
+            if value_layer is not None:
+                v = self.value_layer(x)
+                ret.append(v)
+            else:
+                v = self.value_conv(x)
+                v = self.value_flat(x)
+                if getattr(self, 'value_dense', None) is not None:
+                    nop = self.value_dense(v)
+                    v = torch.cat([v, nop], 1)
+                ret.append(v)
         
         if len(ret) == 1:
             return ret[0]

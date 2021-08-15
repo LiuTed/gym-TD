@@ -9,5 +9,5 @@
     "total_loops": 100,
     "test_episode": 20,
     
-    "debug": 1
+    "use_cuda": 1
 }

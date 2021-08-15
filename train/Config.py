@@ -23,7 +23,7 @@ def load_config(config):
 
 def get_device(config):
     import torch
-    if torch.cuda.is_available() and not config.debug:
+    if torch.cuda.is_available() and config.use_cuda:
         device = torch.device("cuda")
         logger.info('C', "Using CUDA")
     else:
