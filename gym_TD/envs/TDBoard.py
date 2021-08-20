@@ -1,7 +1,5 @@
 import numpy as np
 
-from gym.utils import seeding
-from gym.envs.classic_control import rendering
 from gym_TD.utils import logger
 from gym_TD.envs.TDParam import config, hyper_parameters
 
@@ -95,7 +93,7 @@ class TDBoard(object):
     def __init__(self, map_size, num_roads, np_random, cost_def, cost_atk, max_cost, base_LP):
         self.map_size = map_size
 
-        self.map = np.zeros(shape=(map_size, map_size, 6), dtype=np.int32)
+        self.map = np.zeros(shape=(6, map_size, map_size), dtype=np.int32)
         # is road, is road1, is road2, is road3, dist to end, where to go
         roads = TDRoadGen.create_road(np_random, map_size, num_roads)
         
@@ -105,8 +103,8 @@ class TDBoard(object):
         for i, road in enumerate(roads):
             last = None
             for p in road: # from start to end
-                self.map[p[0], p[1], 0] = 1
-                self.map[p[0], p[1], i+1] = 1
+                self.map[0, p[0], p[1]] = 1
+                self.map[i+1, p[0], p[1]] = 1
                 if last is not None:
                     if p[0] - last[0] == 0:
                         if p[1] - last[1] == 1:
@@ -117,11 +115,11 @@ class TDBoard(object):
                         direct = 2
                     else:
                         direct = 3
-                    self.map[last[0], last[1], 5] = direct
+                    self.map[5, last[0], last[1]] = direct
                 last = p
             dist = 0
             for p in reversed(road): # from end to start
-                self.map[p[0], p[1], 4] = dist
+                self.map[4, p[0], p[1]] = dist
                 dist += 1
         
         logger.debug('B', 'Map: {}', self.map)
@@ -157,8 +155,9 @@ class TDBoard(object):
         10: is tower
         11: defender cost
         12: attacker cost
-        [13, 13+natk): tower atk lv is [0, natk]
-        [13+natk, 13+natk+nrange): tower range lv is [0, nrange]
+        13: progress of the game
+        [14, 14+natk): tower atk lv is [0, natk]
+        [14+natk, 14+natk+nrange): tower range lv is [0, nrange]
         [a, a+ol): LP ratio of enemies of type 0
         [a+ol, a+2ol): LP ratio of enemies of type 1
         [a+2ol, a+3ol): LP ratio of enemies of type 2
@@ -168,30 +167,32 @@ class TDBoard(object):
         '''
         ptr = np.zeros(shape=(self.map_size, self.map_size, 3), dtype=np.int32)
         s = np.zeros(shape=self.state_shape, dtype=np.float32)
-        s[:,:,0:4] = self.map[:,:,0:4]
-        s[self.end[0], self.end[1], 4] = 1
+        s[0:4] = self.map[0:4]
+        s[4, self.end[0], self.end[1]] = 1
         if self.max_base_LP is None:
-            s[:,:,5] = 1.
+            s[5] = 1.
         else:
-            s[:,:,5] = self.base_LP / self.max_base_LP
+            s[5] = self.base_LP / self.max_base_LP
         for i, start in enumerate(self.start):
-            s[start[0], start[1], 6+i] = 1
-        s[:,:,9] = self.map[:,:,4] / (np.max(self.map[:,:,4])+1)
-        s[:,:,11] = self.cost_def/self.max_cost
-        s[:,:,12] = self.cost_atk/self.max_cost
+            s[6+i, start[0], start[1]] = 1
+        s[9] = self.map[4]
+        s[9] /= (np.max(self.map[4]) + 1)
+        s[11] = self.cost_def / self.max_cost
+        s[12] = self.cost_atk / self.max_cost
+        s[13] = self.steps / hyper_parameters.max_episode_steps
         
         tower_atk_base = 13
         tower_range_base = tower_atk_base + len(config.tower_ATKUp_list) + 1
         for t in self.towers:
-            s[t.loc[0], t.loc[1], 10] = 1
-            s[t.loc[0], t.loc[1], tower_atk_base+t.atklv] = 1
-            s[t.loc[0], t.loc[1], tower_range_base+t.rangelv] = 1
+            s[10, t.loc[0], t.loc[1]] = 1
+            s[tower_atk_base+t.atklv, t.loc[0], t.loc[1]] = 1
+            s[tower_range_base+t.rangelv, t.loc[0], t.loc[1]] = 1
 
         enemy_base = tower_range_base + len(config.tower_rangeUp_list) + 1
         for e in self.enemies:
             n = ptr[e.loc[0], e.loc[1], e.type]
-            s[e.loc[0], e.loc[1], enemy_base+hyper_parameters.enemy_overlay_limit*e.type+n] = e.LP/e.maxLP
-            s[e.loc[0], e.loc[1], enemy_base+hyper_parameters.enemy_overlay_limit*(e.type+3)+n] = e.margin
+            s[enemy_base+hyper_parameters.enemy_overlay_limit*e.type+n, e.loc[0], e.loc[1]] = e.LP/e.maxLP
+            s[enemy_base+hyper_parameters.enemy_overlay_limit*(e.type+3)+n, e.loc[0], e.loc[1]] = e.margin
             ptr[e.loc[0], e.loc[1], e.type] += 1
         return s
     
@@ -200,7 +201,7 @@ class TDBoard(object):
         return 15 + len(config.tower_ATKUp_list) + len(config.tower_rangeUp_list) + 6*hyper_parameters.enemy_overlay_limit
     @property
     def state_shape(self):
-        return (self.map_size, self.map_size, self.n_channels())
+        return (self.n_channels(), self.map_size, self.map_size)
     
     def is_valid_pos(self, pos):
         return pos[0] >= 0 and pos[0] < self.map_size and pos[1] >= 0 and pos[1] < self.map_size
@@ -258,8 +259,8 @@ class TDBoard(object):
         if self.cost_def < t.cost:
             logger.verbose('B', 'Build tower ({},{}) failed due to cost shortage', loc[0], loc[1])
             return False
-        if self.map[loc[0], loc[1], 0] == 1:
-            logger.verbose('Cannot overlay tower at ({},{})', loc[0], loc[1])
+        if self.map[0, loc[0], loc[1]] == 1:
+            logger.verbose('B', 'Cannot overlay tower at ({},{})', loc[0], loc[1])
             return False
         logger.debug('B', 'Build tower ({},{})', loc[0], loc[1])
         self.towers.append(t)
@@ -329,7 +330,7 @@ class TDBoard(object):
             for e in self.enemies:
                 if dist(e.loc, t.loc) <= t.rge:
                     attackable.append(e)
-            attackable.sort(key=lambda x: self.map[x.loc[0], x.loc[1]][4] - x.margin)
+            attackable.sort(key=lambda x: self.map[4, x.loc[0], x.loc[1]] - x.margin)
             if len(attackable) > 0:
                 e = attackable[0]
                 e.damage(t.atk)
@@ -350,7 +351,7 @@ class TDBoard(object):
             while e.margin >= 1.:
                 # move to next grid
                 e.margin -= 1.
-                d = self.map[e.loc[0], e.loc[1], 5]
+                d = self.map[5, e.loc[0], e.loc[1]]
                 p = [
                     e.loc[0] + dp[d][0],
                     e.loc[1] + dp[d][1]
@@ -370,7 +371,12 @@ class TDBoard(object):
             self.enemies.remove(e)
             self.cnt[e.loc[0], e.loc[1], e.type] -= 1
         
-        self.cost_atk = min(self.cost_atk+config.attacker_cost_rate, self.max_cost)
+        progress = self.steps / hyper_parameters.max_episode_steps
+        if progress >= 0.5:
+            attacker_cost_rate = config.attacker_cost_final_rate
+        else:
+            attacker_cost_rate = config.attacker_cost_init_rate * (1. - progress) + config.attacker_cost_final_rate * progress
+        self.cost_atk = min(self.cost_atk+attacker_cost_rate, self.max_cost)
         self.cost_def = min(self.cost_def+config.defender_cost_rate, self.max_cost)
         logger.debug('B', 'Reward: {}', reward)
         return reward
@@ -384,6 +390,8 @@ class TDBoard(object):
         screen_height = 600
         cost_bar_height = 15
         if self.viewer is None: #draw permanent elements here
+            from gym.envs.classic_control import rendering
+            
             self.viewer = rendering.Viewer(screen_width, screen_height+cost_bar_height)
             # create viewer
             background = rendering.FilledPolygon([
@@ -410,7 +418,7 @@ class TDBoard(object):
             # draw grid lines
             for r in range(self.map_size):
                 for c in range(self.map_size):
-                    if self.map[r,c,0] == 1:
+                    if self.map[0,r,c] == 1:
                         left, right, top, bottom = \
                             screen_width * c // self.map_size, \
                             screen_width * (c+1) // self.map_size, \
@@ -451,6 +459,7 @@ class TDBoard(object):
             # draw endpoint
         
         # draw changable elements here
+        # attacker cost bar
         left, right, top, bottom = \
             0, int(screen_width*(self.cost_atk/self.max_cost)//2), \
             screen_height+cost_bar_height, screen_height
@@ -461,6 +470,7 @@ class TDBoard(object):
             ],
             color=(1, .3, 0)
         )
+        # defender cost bar
         left, right, top, bottom = \
             screen_width//2, int(screen_width*(1+self.cost_def/self.max_cost)//2), \
             screen_height+cost_bar_height, screen_height
@@ -471,6 +481,7 @@ class TDBoard(object):
             ],
             color=(0, .3, 1)
         )
+
         block_width = screen_width // self.map_size
         block_height = screen_height // self.map_size
         for e in self.enemies:
@@ -480,7 +491,9 @@ class TDBoard(object):
                 screen_height * (e.loc[0]+1) // self.map_size, \
                 screen_height * e.loc[0] // self.map_size
             lbheight = screen_height * e.loc[0] // self.map_size
-            lblen = int(e.LP / e.maxLP * 3 / 8 * block_width)
+            lblen = int(e.LP / e.maxLP * 3 / 8 * block_width + .5)
+            cbheight = screen_height * e.loc[0] // self.map_size
+            cblen = int(self.cnt[e.loc[0], e.loc[1], e.type] * 3 / 8 / hyper_parameters.enemy_overlay_limit * block_width + .5)
             #LP bar
             if e.type == 0: #left up
                 left += block_width // 16
@@ -489,6 +502,7 @@ class TDBoard(object):
                 bottom += block_height * 7 // 12
                 color = (0.6, 0.2, 0.2)
                 lbheight += block_height * 13 // 24
+                cbheight += block_height // 2
             elif e.type == 1: #right up
                 left += block_width * 9 // 16
                 right -= block_width // 16
@@ -496,6 +510,7 @@ class TDBoard(object):
                 bottom += block_height * 7 // 12
                 color = (0.2, 0.6, 0.2)
                 lbheight += block_height * 13 // 24
+                cbheight += block_height // 2
             elif e.type == 2: #bottom center
                 left += block_width * 5 // 16
                 right -= block_width * 5 // 16
@@ -514,6 +529,11 @@ class TDBoard(object):
                 (left, lbheight), (left + lblen, lbheight),
                 color = (0, 1, 0)
             )
+            self.viewer.draw_line(
+                (left, cbheight), (left + cblen, cbheight),
+                color = (0, 1, 0)
+            )
+        
         for t in self.towers:
             left, right, top, bottom = \
                 screen_width * t.loc[1] // self.map_size, \
@@ -546,12 +566,12 @@ class TDBoard(object):
                 color = (0, 1, 0)
             )
             
-        if config.base_LP is not None:
+        if self.base_LP is not None:
             left, bottom = \
                 screen_width * self.end[1] // self.map_size, \
                 screen_height * self.end[0] // self.map_size
             top = bottom + screen_height // self.map_size // 10
-            right = left + screen_width // self.map_size * (self.base_LP / config.base_LP)
+            right = left + int(screen_width // self.map_size * self.base_LP / self.max_base_LP + .5)
             self.viewer.draw_polygon(
                 v=[
                 (left, bottom), (left, top),

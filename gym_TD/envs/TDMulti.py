@@ -87,6 +87,8 @@ class TDMulti(TDGymBasic):
             if self.attacker_cd == 0:
                 for i in range(self.num_roads):
                     cluster = atk_act[i]
+                    if np.all(cluster == 3):
+                        continue
                     if self._board.summon_cluster(cluster, i):
                         self.attacker_cd = config.attacker_action_interval
                     else:

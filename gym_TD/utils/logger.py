@@ -1,6 +1,3 @@
-from gym.logger import DISABLED
-
-
 DEBUG = 0
 FULL = 10
 INFO = 20

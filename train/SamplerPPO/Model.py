@@ -1,12 +1,13 @@
 import torch
+import torch.distributions as tdist
 import numpy as np
 from gym_TD import logger
 
-class PPO(object):
+class SamplerPPO(object):
     def __init__(
         self,
         actor, critic, actor_critic,
-        state_shape, action_shape,
+        state_shape, policy_shape, len_sample,
         config
     ):
         if actor is not None and critic is not None:
@@ -35,9 +36,19 @@ class PPO(object):
             )
             self.__unified = True
         else:
-            raise ValueError('PPO: one of (actor, critic) or actor_critic must be specified')
+            raise ValueError('SamplerPPO: one of (actor, critic) or actor_critic must be specified')
 
         self.__config = config
+
+        action_shape = policy_shape.copy()
+        if len_sample > 0:
+            action_shape[-1] = len_sample
+            self.reduce_dim = False
+            self.len_sample = len_sample
+        else:
+            action_shape = action_shape[:-1]
+            self.reduce_dim = True
+            self.len_sample = 1
 
         self.__states = np.zeros(shape=(config.horizon, config.num_actors, *state_shape), dtype=np.float32)
         self.__actions = np.zeros(shape=(config.horizon, config.num_actors, *action_shape), dtype=np.int64)
@@ -45,13 +56,16 @@ class PPO(object):
         self.__rewards = np.zeros(shape=(config.horizon, config.num_actors), dtype=np.float32)
         self.__advs = np.zeros(shape=(config.horizon, config.num_actors, 1), dtype=np.float32)
         self.__returns = np.zeros_like(self.__advs)
-        self.__logp = np.zeros(shape=(config.horizon, config.num_actors, 1, *action_shape), dtype=np.float32)
+        self.__logp = np.zeros(shape=(config.horizon, config.num_actors, *policy_shape), dtype=np.float32)
         self.__storage_ptr = 0
         self.__storage_subptr = 0
 
         self.__step = 0
 
-        logger.debug('P', 'state: {}; action: {}', state_shape, action_shape)
+        logger.debug('P',
+            'state: {}; policy: {}, action: {}',
+            state_shape, policy_shape, action_shape
+        )
     
     @property
     def step(self):
@@ -76,7 +90,7 @@ class PPO(object):
             self.__actor_optimizer.load_state_dict(d['actor_optim'])
             self.__critic_optimizer.load_state_dict(d['critic_optim'])
         self.__step = d['step']
-        logger.verbose('P', 'PPO: restored')
+        logger.verbose('P', 'SamplerPPO: restored')
     
     def save(self, ckpt):
         if self.__unified:
@@ -95,11 +109,35 @@ class PPO(object):
             }
         logger.debug('P', 'Model: {}', d)
         torch.save(d, ckpt+'/model.pkl')
-        logger.verbose('P', 'PPO: saved')
+        logger.verbose('P', 'SamplerPPO: saved')
 
-    def get_action(self, state):
+    def get_action(self, state, determinated=False):
         with torch.no_grad():
-            return self.get_prob(state).max(1)[1].cpu().numpy()
+            prob = self.get_prob(state)
+            batch_shape = prob.shape[:-1]
+
+            if not determinated:
+                dist = tdist.categorical.Categorical(logits=prob)
+
+                s = dist.sample([self.len_sample])
+                s = s.reshape([-1, s.shape[0]]).T
+
+                if self.reduce_dim:
+                    s = s.reshape(batch_shape)
+                else:
+                    s = s.reshape(batch_shape + torch.Size([self.len_sample]))
+            else:
+                s = torch.max(prob, -1)[1]
+                if not self.reduce_dim:
+                    s = s.unsqueeze(-1)
+                    if self.len_sample > 1:
+                        shape = s.shape
+                        logger.warn('P',
+                            'SamplerPPO: terminated action with length > 1 may generate result unexpectedly'
+                        )
+                        s = s.expand(*shape[:-1], self.len_sample)
+
+            return s.cpu().numpy()
     
     def get_prob(self, state):
         if self.__unified:
@@ -145,12 +183,11 @@ class PPO(object):
         i = self.__storage_subptr - 1
         with torch.no_grad():
             s = torch.tensor(self.__states[:, i])
-            acts = torch.tensor(self.__actions[:, i]).unsqueeze(1)
             dones = self.__dones[:, i]
             r = self.__rewards[:, i]
 
             logp, v = self.get_p_v(s)
-            self.__logp[:, i] = logp.cpu().gather(1, acts).numpy()
+            self.__logp[:, i] = logp.cpu().numpy()
             v = v.cpu().numpy()
 
             last_gae = 0.
@@ -171,12 +208,11 @@ class PPO(object):
         with torch.no_grad():
             for i in range(self.__config.num_actors):
                 s = torch.tensor(self.__states[:, i])
-                acts = torch.tensor(self.__actions[:, i]).unsqueeze(1)
                 dones = self.__dones[:, i]
                 r = self.__rewards[:, i]
 
                 logp, v = self.get_p_v(s)
-                self.__logp[:, i] = logp.cpu().gather(1, acts).numpy()
+                self.__logp[:, i] = logp.cpu().numpy()
                 v = v.cpu().numpy()
 
                 last_gae = 0.
@@ -214,7 +250,8 @@ class PPO(object):
 
                 s = torch.tensor(states[slice], device=self.__config.device)
                 a = torch.tensor(actions[slice], dtype=torch.int64, device=self.__config.device)
-                a.unsqueeze_(1)
+                if self.reduce_dim:
+                    a = a.unsqueeze(-1)
                 adv = torch.tensor(advs[slice], device=self.__config.device)
                 ret = torch.tensor(returns[slice], device=self.__config.device)
                 log_prob_old = torch.tensor(logp[slice], device=self.__config.device)
@@ -231,7 +268,10 @@ class PPO(object):
                 logger.debug('P', 'log_prob: {}; a: {}; adv: {}', log_prob.shape, a.shape, adv.shape)
                 ratio = torch.exp(
                     torch.clip(
-                        log_prob.gather(1, a) - log_prob_old,
+                        torch.sum(
+                            (log_prob - log_prob_old).gather(-1, a),
+                            -1
+                        ),
                         None, 10
                     )
                 )
@@ -247,7 +287,7 @@ class PPO(object):
                 entropy = torch.mean(
                     torch.sum(
                         - torch.exp(log_prob) * log_prob,
-                        1
+                        -1
                     )
                 )
 

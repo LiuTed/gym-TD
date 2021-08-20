@@ -1,13 +1,13 @@
 {
-    "horizon": 64,
-    "num_actors": 1,
+    "horizon": 128,
+    "num_actors": 4,
 
-    "batch_size": 16,
-    "train_epoch": 1,
+    "batch_size": 64,
+    "train_epoch": 3,
 
-    "actor_learning_rate": 1e-4,
-    "critic_learning_rate": 1e-4,
-    "learning_rate": 1e-4,
+    "actor_learning_rate": 2e-4,
+    "critic_learning_rate": 2e-4,
+    "learning_rate": 3e-4,
     "gamma": 0.99,
     "lam": 0.95,
     "trunc_eps": 0.1,
@@ -18,5 +18,5 @@
     "total_loops": 100,
     "test_episode": 20,
     
-    "use_cuda": 0
+    "use_cuda": 1
 }

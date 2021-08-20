@@ -18,7 +18,7 @@ class TDGymBasic(gym.Env):
     def __init__(self, map_size, seed):
         super(TDGymBasic, self).__init__()
         self.observation_space = \
-            spaces.Box(low=0., high=2., shape=(map_size, map_size, TDBoard.n_channels()), dtype=np.float32)
+            spaces.Box(low=0., high=1., shape=(TDBoard.n_channels(), map_size, map_size), dtype=np.float32)
         self.map_size = map_size
         self._board = None
         self.seed(seed)
@@ -61,7 +61,17 @@ class TDGymBasic(gym.Env):
             if self._board.summon_cluster(
                 cluster, road
             ):
-                self.attacker_cd = config.defender_action_interval
+                self.attacker_cd = config.attacker_action_interval
+    
+    def random_enemy_lv1(self):
+        if self.attacker_cd == 0:
+            cluster = np.full([hyper_parameters.max_cluster_length], self.np_random.randint(0, 3))
+            road = self.np_random.randint(self.num_roads)
+            if self._board.summon_cluster(
+                cluster, road
+            ):
+                self.attacker_cd = config.attacker_action_interval
+
                 
     def random_tower_lv0(self):
         if self.defender_cd == 0:
@@ -72,21 +82,22 @@ class TDGymBasic(gym.Env):
                 self.defender_cd = config.defender_action_interval
 
     def random_tower_lv1(self):
+        dp = [[r, c] for r in range(-2, 3) for c in range(-2, 3)]
         if self.defender_cd == 0:
             act = random.randint(0, 2)
             if act == 0:
+                roads = []
                 for r in range(self.map_size):
                     for c in range(self.map_size):
-                        if self._board.map[r, c, 0] == 1:
-                            pos = [
-                                [r-1, c-1],
-                                [r-1, c+1],
-                                [r+1, c-1],
-                                [r+1, c+1]
-                            ][random.randint(0, 3)]
-                            if self._board.is_valid_pos(pos) and self._board.tower_build(pos):
-                                self.defender_cd = config.defender_action_interval
-                                return
+                        if self._board.map[0, r, c] == 1:
+                            roads.append([r, c])
+                random.shuffle(roads)
+                for r, c in roads:
+                    d = dp[random.randint(0, len(dp)-1)]
+                    pos = [r+d[0], c+d[1]]
+                    if self._board.is_valid_pos(pos) and self._board.tower_build(pos):
+                        self.defender_cd = config.defender_action_interval
+                        return
             elif act == 1:
                 if len(self._board.towers) == 0:
                     return

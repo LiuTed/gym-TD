@@ -1,1 +1,2 @@
-from PPO.Model import PPO as Model
+from PPO.Model import PPO
+from PPO import Callbacks

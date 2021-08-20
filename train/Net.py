@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as func
 import numpy as np
+from torch.nn.modules.activation import LogSoftmax
 
 class View(nn.Module):
     # https://github.com/pytorch/vision/issues/720
@@ -19,8 +20,9 @@ class FCN(nn.Module):
             prob_out,
             value_out,
             kernels=[5,5,3],
-            channels=[128,256,512],
-            pools=[False,True,False]
+            channels=[256,512,1024],
+            pools=[False,True,False],
+            prob_channel = 1
         ):
         assert len(kernels) == len(channels) == len(pools), 'FCN: the length of kernels, channels and pools must be the same (input: kernels: {}, channels: {}, pools: {})'.format(kernels, channels, pools)
         super(FCN, self).__init__()
@@ -45,7 +47,7 @@ class FCN(nn.Module):
             self.prob_model = nn.Sequential(
                 nn.Linear(channels[-1], np.prod(prob_out)),
                 View([-1, *prob_out]),
-                nn.LogSoftmax(1)
+                nn.LogSoftmax(prob_channel)
             )
         
         if value_out is not None:
@@ -54,6 +56,51 @@ class FCN(nn.Module):
                 View([-1, *value_out])
             )
 
+    def forward(self, x):
+        x = self.shared(x)
+        prob_model = getattr(self, 'prob_model', None)
+        value_model = getattr(self, 'value_model', None)
+        ret = []
+        if prob_model is not None:
+            ret.append(prob_model(x))
+        if value_model is not None:
+            ret.append(value_model(x))
+
+        if len(ret) == 1:
+            return ret[0]
+        else:
+            return ret
+    
+class FullyConnected(nn.Module):
+    def __init__(
+        self,
+        input_shape,
+        prob_out, value_out,
+        hiddens, prob_channel = 1
+    ):
+        super().__init__()
+        layers = [
+            nn.Flatten(),
+        ]
+        lastn = np.prod(input_shape)
+        for h in hiddens:
+            layers.append(nn.Linear(lastn, h))
+            layers.append(nn.ReLU())
+            lastn = h
+        self.shared = nn.Sequential(*layers)
+
+        if prob_out is not None:
+            self.prob_model = nn.Sequential(
+                nn.Linear(lastn, np.prod(prob_out)),
+                View([-1, *prob_out]),
+                nn.LogSoftmax(prob_channel)
+            )
+        if value_out is not None:
+            self.value_model = nn.Sequential(
+                nn.Linear(lastn, np.prod(value_out)),
+                View([-1, *value_out])
+            )
+    
     def forward(self, x):
         x = self.shared(x)
         prob_model = getattr(self, 'prob_model', None)
@@ -78,7 +125,8 @@ class UNet(nn.Module):
             kernels=[3,3,3,1],
             channels=[64,128,256,512],
             extra_act=1,
-            value_type='independent'
+            value_type='independent',
+            prob_channel = 1
         ):
         assert len(kernels) == len(channels), 'UNet: the length of kernels and channels must be the same (input: kernels: {}, channels: {})'.format(kernels, channels)
         super(UNet, self).__init__()
@@ -120,7 +168,7 @@ class UNet(nn.Module):
             self.prob_flat = nn.Flatten()
             if extra_act > 0:
                 self.prob_dense = nn.Linear(prob_out*oh*ow, extra_act)
-            self.logsoftmax = nn.LogSoftmax(1)
+            self.logsoftmax = nn.LogSoftmax(prob_channel)
         
         if value_out is not None:
             if value_type == 'independent':

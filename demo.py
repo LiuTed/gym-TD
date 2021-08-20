@@ -2,6 +2,7 @@ import gym
 from gym import logger, wrappers
 import gym_TD
 from gym_TD import getConfig, paramConfig, hyper_parameters, getHyperParameters
+import random
 
 from time import sleep
 
@@ -24,15 +25,16 @@ def play_atk():
     rs = []
     el = []
     win = []
-    for i in range(300):
+    for i in range(100):
+        env.seed(4218513)
         env.reset()
-        # env.render()
+        env.render()
         done = False
         tr = 0.
         s = 0
         while not done:
             _, r, done, _ = env.step(env.action_space.sample())
-            # env.render()
+            env.render()
             tr += r
             s += 1
         rs.append(tr)
@@ -69,14 +71,18 @@ def play_def():
     print(sum(rs)/len(rs), sum(el)/len(el), sum(win)/len(win)*100)
 
 def play_2p():
+    seed = random.randint(0, 0xffffff)
+    print(seed)
+    seed = 5807770
     env = gym.make('TD-2p-middle-v0')
+    env.seed(seed)
     env.reset()
     env.render()
     done = False
     while not done:
-        env.random_tower()
-        env.random_enemy()
-        _, _, done, _ = env.empty_step()
+        env.random_tower_lv1()
+        env.random_enemy_lv1()
+        _, _, done, _ = env.step(env.empty_action())
         env.render()
     
 def single_enemy(loop, i):
@@ -129,18 +135,18 @@ if __name__ == "__main__":
     else:
         logger.set_level(logger.INFO)
     
-    paramConfig(
-        base_LP=3,
-        reward_time=0.001,
-        enemy_balance_LP = 15,
-        enemy_strong_LP = 25,
-        enemy_fast_LP = 8,
-        enemy_balance_speed = 0.4,
-        enemy_strong_speed = 0.22,
-        enemy_fast_speed = 0.65,
-        tower_attack_interval = 2,
-        dummy = None
-    )
+    # paramConfig(
+    #     base_LP=3,
+    #     reward_time=0.001,
+    #     enemy_balance_LP = 15,
+    #     enemy_strong_LP = 25,
+    #     enemy_fast_LP = 8,
+    #     enemy_balance_speed = 0.4,
+    #     enemy_strong_speed = 0.22,
+    #     enemy_fast_speed = 0.65,
+    #     tower_attack_interval = 2,
+    #     dummy = None
+    # )
 
     if args.a:
         play_atk()

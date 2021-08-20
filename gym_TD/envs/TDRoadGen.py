@@ -1,4 +1,5 @@
 import numpy as np
+from numpy.lib.function_base import select
 
 def create_road_v2(np_random, map_size, num_roads):
     assert 1 <= num_roads <= 3
@@ -13,9 +14,17 @@ def create_road_v2(np_random, map_size, num_roads):
     
     dp = [[1, 0], [0, -1], [-1, 0], [0, 1]] # up, left, down, right
     field = np.zeros((map_size, map_size), dtype=np.int32)
+    is_rotate_point = np.zeros((map_size, map_size), dtype=np.int32)
     field[center_point[0], center_point[1]] = 1
 
     dir = np_random.randint(4) # start direction
+
+    def find_possible_direction(pos):
+        res = []
+        for i, (dx, dy) in enumerate(dp):
+            if field[pos[0] + dx, pos[1] + dy] == 0:
+                res.append(i)
+        return res
 
     def generate_road(start, dir):
         pos = start.copy()
@@ -23,10 +32,11 @@ def create_road_v2(np_random, map_size, num_roads):
         road = []
         next_rotate = None
         loop = 0
-        while inner_pos(pos) and loop < 1000:
+        while inner_pos(pos) and loop < 100:
             loop += 1
             shape = np_random.randint(2)
             seg_length = np_random.randint(low=map_size*3//20, high=map_size//4)
+            cross = False
             if shape <= 0: # line 1/2
                 for _ in range(seg_length*2):
                     pos[0] += dp[dir][0]
@@ -34,6 +44,7 @@ def create_road_v2(np_random, map_size, num_roads):
                     if field[pos[0], pos[1]] != 0:
                         pos[0] -= dp[dir][0]
                         pos[1] -= dp[dir][1]
+                        cross = True
                         break
                     road.append(pos.copy())
                     field[pos[0], pos[1]] = 1
@@ -47,6 +58,7 @@ def create_road_v2(np_random, map_size, num_roads):
                     if field[pos[0], pos[1]] != 0:
                         pos[0] -= dp[dir][0]
                         pos[1] -= dp[dir][1]
+                        cross = True
                         break
                     road.append(pos.copy())
                     field[pos[0], pos[1]] = 1
@@ -61,6 +73,7 @@ def create_road_v2(np_random, map_size, num_roads):
                 else:
                     rd = np_random.randint(2) * 2 - 1 # left or right (-1 or 1)
                     next_rotate = - rd
+                is_rotate_point[pos[0], pos[1]] = 1
                 dir = (dir + 4 + rd) % 4 # new direction
                 for _ in range(seg_length):
                     pos[0] += dp[dir][0]
@@ -68,34 +81,81 @@ def create_road_v2(np_random, map_size, num_roads):
                     if field[pos[0], pos[1]] != 0:
                         pos[0] -= dp[dir][0]
                         pos[1] -= dp[dir][1]
+                        cross = True
                         break
+                    cross = False
                     road.append(pos.copy())
                     field[pos[0], pos[1]] = 1
                     length += 1
                     if not inner_pos(pos):
                         break
-        if loop >= 1000:
+            if cross:
+                pd = find_possible_direction(pos)
+                if len(pd) == 0:
+                    return None
+                else:
+                    dir = pd[np_random.randint(low=0, high=len(pd))]
+                    next_rotate = None
+                    is_rotate_point[pos[0], pos[1]] = 1
+                    
+        if loop >= 100:
             return None
         return road
 
     # center point to end point
     road1 = generate_road(center_point, dir)
     # center point to start point
-    road2 = generate_road(center_point, (dir+2)%4)
+    road2 = None
+    while road2 is None:
+        road2 = generate_road(center_point, (dir+2)%4)
+        if road2 is not None:
+            if len(road1) + len(road2) + 1 >= map_size * 2:
+                for p in road2:
+                    field[p[0], p[1]] = 0
+                    is_rotate_point[p[0], p[1]] = 0
+                road2 = None
+            elif abs(road2[-1][0] - road1[-1][0]) +\
+                abs(road2[-1][1] - road1[-1][1]) < map_size * 3 // 4:
+                for p in road2:
+                    field[p[0], p[1]] = 0
+                    is_rotate_point[p[0], p[1]] = 0
+                road2 = None
 
     road2.reverse()
     main_road = road2 + [center_point] + road1
 
     roads = [main_road]
+    
+    selectable = []
+    i = 0
+    while i < len(main_road):
+        if not is_rotate_point[main_road[i][0], main_road[i][1]]:
+            if i < len(main_road)-1 and not is_rotate_point[main_road[i+1][0], main_road[i+1][1]]:
+                selectable.append((main_road[i], i))
+            i += 1
+        else:
+            i += 2
 
     for _ in range(1, num_roads):
-        dist = np_random.randint(low=len(main_road)*2//5, high=len(main_road)*4//5)
-        new_dir = np_random.randint(4)
-        new_road = generate_road(main_road[dist], new_dir)
+        new_road = None
         while new_road is None:
-            dist = np_random.randint(low=len(main_road)*2//5, high=len(main_road)*4//5)
+            dist = np_random.randint(low=len(selectable)*2//5, high=len(selectable)*4//5)
             new_dir = np_random.randint(4)
-            new_road = generate_road(main_road[dist], new_dir)
+            new_start, dist = selectable[dist]
+            new_road = generate_road(new_start, new_dir)
+            if new_road is not None:
+                if len(new_road) + len(main_road) - dist >= map_size * 2:
+                    for p in new_road:
+                        field[p[0], p[1]] = 0
+                        is_rotate_point[p[0], p[1]] = 0
+                    new_road = None
+                elif abs(new_road[-1][0] - main_road[-1][0]) +\
+                    abs(new_road[-1][1] - main_road[-1][1]) < map_size * 3 // 4:
+                    for p in new_road:
+                        field[p[0], p[1]] = 0
+                        is_rotate_point[p[0], p[1]] = 0
+                    new_road = None     
+
         new_road.reverse()
         new_road += main_road[dist:]
         roads.append(new_road)

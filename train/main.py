@@ -1,19 +1,12 @@
-from gym_TD.envs import TDAttack
-from gym_TD.envs import TDDefense
-import Config
 import torch
 import numpy as np
 import json
 import os
 
 import gym
-from gym import wrappers
-from gym import logger as gym_logger
 import gym_TD
 from gym_TD import logger
-from gym_TD.envs import paramConfig, getConfig
 
-import argparse
 import tqdm
 import time
 
@@ -22,109 +15,9 @@ from tensorboardX import SummaryWriter
 def strtime():
     return time.asctime(time.localtime(time.time()))
 
-def PPO_train(ppo, state, action, next_state, reward, done, info, writer, title, config):
-    if (action != info['RealAction']).any():
-        reward -= 0.3
-    ppo.record(state, action, reward, done)
-    if ppo.len_trajectory % config.horizon == 0:
-        ppo.flush(next_state)
-        logger.debug('M', 'PPO_train: flush one trajectory')
-        if ppo.n_record == config.horizon * config.num_actors:
-            logger.debug('M', 'PPO_train: start training')
-            ts = time.perf_counter()
-            losses = ppo.learn()
-            te = time.perf_counter()
-            logger.verbose('M', 'PPO_train: finish training, used {} seconds', te-ts)
-            return losses
-    return None
-
-def PPO_loss_parse(losses, writer, title):
-    surr, vf, ent, ls, step = [], [], [], [], []
-    for loss in losses:
-        surr += map(lambda x: x[0], loss)
-        vf += map(lambda x: x[1], loss)
-        ent += map(lambda x: x[2], loss)
-        ls += map(lambda x: x[3], loss)
-        step += map(lambda x: x[4], loss)
-    for i in range(len(surr)):
-        writer.add_scalar(title+'/Surrogate', surr[i], step[i])
-        writer.add_scalar(title+'/VF', vf[i], step[i])
-        writer.add_scalar(title+'/Entropy', ent[i], step[i])
-        writer.add_scalar(title+'/Loss', ls[i], step[i])
-    dict = {
-        'SurrogateLoss': surr,
-        'VFLoss': vf,
-        'Entropy': ent,
-        'TotalLoss': ls
-    }
-    return dict
-
-def PPO_model(env, map_size, config):
-    import PPO
-    import Net
-    if env.name == "TDDefense":
-        net = Net.UNet(
-            env.observation_space.shape[2], 64,
-            env.observation_space.shape[0], env.observation_space.shape[1],
-            4, 1
-        ).to(config.device)
-        ppo = PPO.Model(
-            None, None, net,
-            [env.observation_space.shape[2], env.observation_space.shape[0], env.observation_space.shape[1]],
-            (),
-            config
-        )
-    elif env.name == "TDAttack":
-        net = Net.FCN(
-            env.observation_space.shape[2],
-            env.observation_space.shape[0], env.observation_space.shape[1],
-            [4, *env.action_space.shape], [1]
-        ).to(config.device)
-        ppo = PPO.Model(
-            None, None, net,
-            [env.observation_space.shape[2], env.observation_space.shape[0], env.observation_space.shape[1]],
-            env.action_space.shape,
-            config
-        )
-    else:
-        logger.error('M', 'Unknown Environment {} ({})', env, type(env))
-    return ppo
-
-def DQN_train(dqn, state, action, next_state, reward, done, info, writer, title, config):
-    dqn.push([
-        state,
-        action,
-        next_state,
-        reward
-    ])
-    return dqn.learn()
-
-def DQN_loss_parse(losses, writer, title):
-    for loss, step in losses:
-        writer.add_scalar(title+'/Loss', loss, step)
-    return map(lambda x: x[0], losses)
-
-def DQN_model(env, map_size, config):
-    import DQN
-    import Net
-    eps_sche = DQN.EpsScheduler(1., 'Linear', lower_bound=0.1, target_steps=200000)
-    if env.name == "TDDefense":
-        net = Net.UNet(
-            env.observation_space.shape[2], 64,
-            map_size, map_size, None, 4, value_type='dependent'
-        ).to(config.device)
-    elif env.name == "TDAttack":
-        net = Net.FCN(
-            env.observation_space.shape[0], map_size, map_size,
-            None, [4, *env.action_space.shape]
-        )
-    dqn = DQN.Model(eps_sche, env.action_space.n, net, config)
-    return dqn
-
 def game_loop(env, model, train_callback, loss_callback, writer, title, config):
-    env.seed(0x12345)
     state = env.reset()
-    state = torch.Tensor([state.transpose(2, 0, 1)])
+    state = torch.Tensor([state])
 
     done = False
     step = 0
@@ -142,7 +35,7 @@ def game_loop(env, model, train_callback, loss_callback, writer, title, config):
             action = env.empty_action()
         next_state, r, done, info = env.step(action)
         
-        next_state = torch.Tensor([next_state.transpose(2, 0, 1)])
+        next_state = torch.Tensor([next_state])
         
         if train_callback is not None:
             loss = train_callback(model, state, action, next_state, r, done, info, writer, title, config)
@@ -178,14 +71,91 @@ def game_loop(env, model, train_callback, loss_callback, writer, title, config):
     return step, info
 
 
-def train_loop(env, model, checkpoint, train_callback, loss_callback, writer, config):
+__episode_rewards = None
+__episode_length = None
+__last_state = None
+__allow_next_move = None
+def game_loop_vec(env, dummy_env, model, train_callback, loss_callback, writer, title, config):
+    global __episode_rewards, __episode_length
+    global __last_state, __allow_next_move
+
+    if __episode_rewards is None:
+        __episode_rewards = [[] for _ in range(len(env.env_fns))]
+        __episode_length = [0 for _ in range(len(env.env_fns))]
+        __allow_next_move = [True for _ in range(len(env.env_fns))]
+        states = env.reset()
+        states = torch.tensor(states)
+    else:
+        states = __last_state
+
+    have_dones = [False for _ in range(len(env.env_fns))]
+    wins = []
+    total_rewards = []
+    length = []
+    step = 0
+    losses = []
+
+    while not all(have_dones):
+        logger.debug('M', 'states: {}', states.shape)
+        actions = model.get_action(states)
+        logger.debug('M', 'actions: {}', actions)
+
+        for i in range(len(env.env_fns)):
+            if not __allow_next_move[i]:
+                actions[i] = dummy_env.empty_action()
+        logger.debug('M', 'actions: {}', actions)
+
+        next_states, rewards, dones, infos = env.step(actions)
+        next_states = torch.tensor(next_states)
+
+        if train_callback is not None:
+            loss = train_callback(model, states, actions, next_states, rewards, dones, infos, writer, title, config)
+            if loss is not None:
+                losses.append(loss)
+        
+        for i, done in enumerate(dones):
+            __episode_rewards[i].append(rewards[i])
+            __episode_length[i] += 1
+            __allow_next_move[i] = infos[i]['AllowNextMove']
+            if done:
+                have_dones[i] = True
+                wins.append(infos[i]['Win'])
+
+                total_rewards.append(sum(__episode_rewards[i]))
+                __episode_rewards[i] = []
+
+                length.append(__episode_length[i])
+                __episode_length[i] = 0
+
+                writer.add_scalar(title+'/TotalReward', total_rewards[-1], model.step)
+                writer.add_scalar(title+'/Length', length[-1], model.step)
+        
+        states = next_states
+        step += 1
+
+    writer.add_scalar(title+'/AvgTotalReward', sum(total_rewards)/len(total_rewards), model.step)
+    writer.add_scalar(title+'/AvgLength', sum(length)/len(length), model.step)
+
+    __last_state = states
+
+    info = {
+        'TotalRewards': total_rewards,
+        'Lengths': length,
+        'Wins': wins
+    }
+    if loss_callback is not None and len(losses) > 0:
+        info['Loss'] = loss_callback(losses, writer, title)
+    
+    return step, info
+
+def train_loop(env, dummy_env, model, checkpoint, train_callback, loss_callback, writer, config):
     logger.info('M', 'train_loop: start')
     for i in tqdm.tqdm(range(1, config.total_loops+1), desc='Training', unit='epsd'):
         logger.debug('M', 'train_loop: {}: start train {}/{}', strtime(), i, config.total_loops)
         nsteps = 0
         bar = tqdm.tqdm(total=config.timesteps_per_loop, leave=False, desc='Collecting', unit='ts')
         while nsteps < config.timesteps_per_loop:
-            step, info = game_loop(env, model, train_callback, loss_callback, writer, 'Train', config)
+            step, info = game_loop_vec(env, dummy_env, model, train_callback, loss_callback, writer, 'Train', config)
             nsteps += step
             bar.update(step)
         del bar
@@ -196,7 +166,7 @@ def train_loop(env, model, checkpoint, train_callback, loss_callback, writer, co
         rewards = []
         legal_act_ratio = []
         for _ in tqdm.tqdm(range(config.test_episode), desc = 'Testing', leave=False, unit='game'):
-            step, info = game_loop(env, model, None, loss_callback, writer, 'Test', config)
+            step, info = game_loop(dummy_env, model, None, loss_callback, writer, 'Test', config)
             wins.append(info['Win'])
             steps.append(step)
             rewards.append(info['TotalReward'])
@@ -249,32 +219,38 @@ def test_loop(env, model, loss_callback, writer, config):
         )
     )
 
-if __name__ == "__main__":
+def _get_args():
+    import argparse
     parser = argparse.ArgumentParser()
 
     train_args = parser.add_argument_group('Training Arguments')
-    train_args.add_argument('-m', '--method', default='PPO', choices=['PPO', 'DQN'], type=str, help='The training method')
-    train_args.add_argument('-c', '--config', default=None, type=str, help='The config file used for training')
-    train_args.add_argument('-r', '--restore', action='store_true', help='Restore from checkpoint')
-    train_args.add_argument('-s', '--checkpoint', default='./ckpt', type=str, help='The name of checkpoint')
-    train_args.add_argument('-t', '--test', action='store_true', help='Run test')
+    train_args.add_argument('-m', '--method', default='PPO', choices=['PPO', 'SamplerPPO'], type=str, help='The training method. Default: PPO')
+    train_args.add_argument('-c', '--config', default=None, type=str, help='The config file used for training.')
+    train_args.add_argument('-r', '--restore', action='store_true', help='Restore from checkpoint.')
+    train_args.add_argument('-s', '--checkpoint', default='./ckpt', type=str, help='The name of checkpoint. Default: ./ckpt')
+    train_args.add_argument('-t', '--test', action='store_true', help='Run test.')
 
     env_args = parser.add_argument_group('Environment Arguments')
-    env_args.add_argument('-E', '--env', default='TD-def-v0', type=str, help='The name of environment')
-    env_args.add_argument('--env-config', type=str, help='The config file of the environment')
-    env_args.add_argument('-S', '--map-size', default=20, type=int, help='Map size of the environment')
+    env_args.add_argument('-E', '--env', default='TD-def-v0', type=str, help='The name of environment. Default: TD-def-v0')
+    env_args.add_argument('--env-config', type=str, default=None, help='The config file of the environment.')
+    env_args.add_argument('-S', '--map-size', default=20, type=int, help='Map size of the environment. Default: 20')
 
     log_args = parser.add_argument_group('Logger Arguments')
-    log_args.add_argument('-d', '--log-dir', default='./log', type=str, help='The directory of log')
-    log_args.add_argument('--no-render', action='store_true', help='Run without rendering')
-    log_args.add_argument('--regions', type=str, nargs='+', help='Specify information of which region(s) could be output')
+    log_args.add_argument('-d', '--log-dir', default='./log', type=str, help='The directory of log. Default: ./log')
+    log_args.add_argument('--no-render', action='store_true', help='Run without rendering.')
+    log_args.add_argument('--regions', type=str, nargs='+', help='Specify information of which region(s) could be output. Default: all regions')
     verb_lv_args = log_args.add_mutually_exclusive_group()
-    verb_lv_args.add_argument('-V', '--verbose', action='store_true', help='Output more information')
-    verb_lv_args.add_argument('-D', '--debug-output', action='store_true', help='Output debug information')
-    verb_lv_args.add_argument('-q', '--quiet', action='store_true', help='Only output errors')
+    verb_lv_args.add_argument('-V', '--verbose', action='store_true', help='Output more information.')
+    verb_lv_args.add_argument('-D', '--debug-output', action='store_true', help='Output debug information.')
+    verb_lv_args.add_argument('-q', '--quiet', action='store_true', help='Only output errors.')
 
     args = parser.parse_args()
+    return args
 
+
+####################################################
+
+def _set_output(args):
     # set verbose level
     if getattr(args, 'regions', None) is None:
         logger.enable_all_region()
@@ -282,6 +258,7 @@ if __name__ == "__main__":
         for r in args.regions:
             logger.add_region(r)
 
+    from gym import logger as gym_logger
     if args.debug_output:
         logger.set_level(logger.DEBUG)
         gym_logger.set_level(gym_logger.DEBUG)
@@ -301,36 +278,47 @@ if __name__ == "__main__":
     except:
         pass
 
+def _get_config(args):
     # read config file
     if args.config is None:
         args.config = args.method + 'Config.json'
         logger.warn('M', 'No config file specified, try using {}'.format(args.config))
-
+    import Config
     config = Config.load_config(args.config)
     dev = Config.get_device(config)
+    return config, dev
 
-    env_config_file = getattr(args, 'env_config', None)
-    if env_config_file is not None:
-        env_config = json.load(env_config_file)
-        paramConfig(**env_config)
-
-    logger.verbose('M', 'Config: {}', config)
-    logger.verbose('M', 'EnvConfig: {}', getConfig())
-
+def _get_environment(args):
     # prepare environment
-    env = gym.make(args.env, map_size = args.map_size)
-    env = wrappers.Monitor(env, directory=args.log_dir, force=True, video_callable=False if args.no_render else None)
-    writer = SummaryWriter(args.log_dir)
+    from gym.wrappers import Monitor
+    from gym.vector.async_vector_env import AsyncVectorEnv
+    def make_fn(i):
+        def closure(_i = i):
+            env = gym.make(args.env, map_size = args.map_size)
+            env = Monitor(env, directory=args.log_dir + '/' + str(_i), force=True, video_callable=False if args.no_render else None)
+            return env
+        return closure
+    env = AsyncVectorEnv([make_fn(i) for i in range(config.num_actors)])
+    dummy_env = make_fn('test')()
+    return env, dummy_env
 
+def _get_model(args, env):
     # prepare model
     if args.method == 'PPO':
-        model = PPO_model(env, args.map_size, config)
-        train_callback = PPO_train
-        loss_callback = PPO_loss_parse
-    elif args.method == 'DQN':
-        model = DQN_model(env, args.map_size, config)
-        train_callback = DQN_train
-        loss_callback = DQN_loss_parse
+        import PPO
+        model = PPO.Callbacks.PPO_model(env, args.env, args.map_size, config)
+        train_callback = PPO.Callbacks.PPO_train
+        loss_callback = PPO.Callbacks.PPO_loss_parse
+    elif args.method == 'SamplerPPO':
+        import SamplerPPO
+        model = SamplerPPO.Callbacks.SamplerPPO_model(env, args.env, args.map_size, config)
+        train_callback = SamplerPPO.Callbacks.SamplerPPO_train
+        loss_callback = SamplerPPO.Callbacks.SamplerPPO_loss_parse
+    # elif args.method == 'DQN':
+    #     import DQN
+    #     model = DQN.Callbacks.DQN_model(env, args.map_size, config)
+    #     train_callback = DQN.Callbacks.DQN_train
+    #     loss_callback = DQN.Callbacks.DQN_loss_parse
     
     if not os.path.isdir(args.checkpoint):
         os.mkdir(args.checkpoint)
@@ -339,9 +327,33 @@ if __name__ == "__main__":
         model.restore(args.checkpoint)
     elif args.test:
         logger.warn('M', 'Testing with model not restored')
+    return model, train_callback, loss_callback
+
+
+if __name__ == "__main__":
+    args = _get_args()
+
+    _set_output(args)
+
+    config, dev = _get_config(args)
+
+    # get environment config
+    from gym_TD.envs import paramConfig, getConfig
+    if args.env_config is not None:
+        env_config = json.load(args.env_config)
+        paramConfig(**env_config)
+
+    logger.verbose('M', 'Config: {}', config)
+    logger.verbose('M', 'EnvConfig: {}', getConfig())
+
+    env, dummy_env = _get_environment(args)
+
+    writer = SummaryWriter(args.log_dir)
+
+    model, train_callback, loss_callback = _get_model(args, dummy_env)
     
     # start training/testing
     if args.test:
         test_loop(env, model, loss_callback, writer, config)
     else:
-        train_loop(env, model, args.checkpoint, train_callback, loss_callback, writer, config)
+        train_loop(env, dummy_env, model, args.checkpoint, train_callback, loss_callback, writer, config)
