@@ -7,13 +7,13 @@ def SamplerPPO_train_single(ppo, state, action, next_state, reward, done, info, 
     ppo.record_single(state, action, reward, done)
     if ppo.len_trajectory % config.horizon == 0:
         ppo.flush_single(next_state)
-        logger.debug('M', 'SamplerPPO_train_single: flush one trajectory')
+        logger.debug('P', 'SamplerPPO_train_single: flush one trajectory')
         if ppo.num_trajectories == config.num_actors:
-            logger.debug('M', 'SamplerPPO_train: start training')
+            logger.debug('P', 'SamplerPPO_train: start training')
             ts = time.perf_counter()
             losses = ppo.learn()
             te = time.perf_counter()
-            logger.verbose('M', 'SamplerPPO_train: finish training, used {} seconds', te-ts)
+            logger.verbose('P', 'SamplerPPO_train: finish training, used {} seconds', te-ts)
             return losses
     return None
     
@@ -24,12 +24,12 @@ def SamplerPPO_train(ppo, states, actions, next_states, rewards, dones, infos, w
     ppo.record(states, actions, rewards, dones)
     if ppo.len_trajectory % config.horizon == 0:
         ppo.flush(next_states)
-        logger.debug('M', 'PPO_train: flush trajectories')
-        logger.debug('M', 'PPO_train: start training')
+        logger.debug('P', 'PPO_train: flush trajectories')
+        logger.debug('P', 'PPO_train: start training')
         ts = time.perf_counter()
         losses = ppo.learn()
         te = time.perf_counter()
-        logger.verbose('M', 'PPO_train: finish training, used {} seconds', te-ts)
+        logger.verbose('P', 'PPO_train: finish training, used {} seconds', te-ts)
         return losses
     return None
 
@@ -85,5 +85,5 @@ def SamplerPPO_model(env, env_name, map_size, config):
             config
         )
     else:
-        logger.error('M', 'Unknown Environment {} ({})', env_name, type(env))
+        logger.error('P', 'Unknown Environment {} ({})', env_name, type(env))
     return ppo

@@ -1,5 +1,5 @@
 import numpy as np
-from numpy.lib.function_base import select
+from gym_TD import logger 
 
 def create_road_v2(np_random, map_size, num_roads):
     assert 1 <= num_roads <= 3
@@ -19,6 +19,8 @@ def create_road_v2(np_random, map_size, num_roads):
 
     dir = np_random.randint(4) # start direction
 
+    logger.debug('R', 'create_road_v2: center {}, dir {}', center_point, dir)
+
     def find_possible_direction(pos):
         res = []
         for i, (dx, dy) in enumerate(dp):
@@ -27,6 +29,7 @@ def create_road_v2(np_random, map_size, num_roads):
         return res
 
     def generate_road(start, dir):
+        logger.debug('R', 'start {} dir {}', start, dir)
         pos = start.copy()
         length = 0
         road = []
@@ -38,6 +41,7 @@ def create_road_v2(np_random, map_size, num_roads):
             seg_length = np_random.randint(low=map_size*3//20, high=map_size//4)
             cross = False
             if shape <= 0: # line 1/2
+                logger.debug('R', 'direct {}', seg_length*2)
                 for _ in range(seg_length*2):
                     pos[0] += dp[dir][0]
                     pos[1] += dp[dir][1]
@@ -45,13 +49,16 @@ def create_road_v2(np_random, map_size, num_roads):
                         pos[0] -= dp[dir][0]
                         pos[1] -= dp[dir][1]
                         cross = True
+                        logger.debug('R', '\tcross {}', _)
                         break
                     road.append(pos.copy())
                     field[pos[0], pos[1]] = 1
                     length += 1
                     if not inner_pos(pos):
+                        logger.debug('R', '\tedge {}', _+1)
                         break
             else: # rotate
+                logger.debug('R', 'rotate {}', seg_length)
                 for _ in range(seg_length):
                     pos[0] += dp[dir][0]
                     pos[1] += dp[dir][1]
@@ -59,11 +66,13 @@ def create_road_v2(np_random, map_size, num_roads):
                         pos[0] -= dp[dir][0]
                         pos[1] -= dp[dir][1]
                         cross = True
+                        logger.debug('R', '\tcross {}', _)
                         break
                     road.append(pos.copy())
                     field[pos[0], pos[1]] = 1
                     length += 1
                     if not inner_pos(pos):
+                        logger.debug('R', '\tedge {}', _+1)
                         break
                 if not inner_pos(pos):
                     break
@@ -73,6 +82,8 @@ def create_road_v2(np_random, map_size, num_roads):
                 else:
                     rd = np_random.randint(2) * 2 - 1 # left or right (-1 or 1)
                     next_rotate = - rd
+                    
+                logger.debug('R', '\tr {}, next {}', rd, next_rotate)
                 is_rotate_point[pos[0], pos[1]] = 1
                 dir = (dir + 4 + rd) % 4 # new direction
                 for _ in range(seg_length):
@@ -82,44 +93,66 @@ def create_road_v2(np_random, map_size, num_roads):
                         pos[0] -= dp[dir][0]
                         pos[1] -= dp[dir][1]
                         cross = True
+                        logger.debug('R', '\tcross {}', _)
                         break
                     cross = False
                     road.append(pos.copy())
                     field[pos[0], pos[1]] = 1
                     length += 1
                     if not inner_pos(pos):
+                        logger.debug('R', '\tedge {}', _+1)
                         break
             if cross:
                 pd = find_possible_direction(pos)
                 if len(pd) == 0:
-                    return None
+                    logger.debug('R', 'no where to go')
+                    return road, False
                 else:
                     dir = pd[np_random.randint(low=0, high=len(pd))]
                     next_rotate = None
                     is_rotate_point[pos[0], pos[1]] = 1
+                    logger.debug('R', 'new direction {}', dir)
                     
         if loop >= 100:
-            return None
-        return road
+            logger.debug('R', 'failed')
+            return road, False
+        return road, True
+    
+    def clean_up(road):
+        for p in road:
+            field[p[0], p[1]] = 0
+            is_rotate_point[p[0], p[1]] = 0
 
     # center point to end point
-    road1 = generate_road(center_point, dir)
+    logger.debug('R', 'create_road_v2: generating main road part 1')
+    road1, succ = [], False
+    while not succ:
+        road1, succ = generate_road(center_point, dir)
+        if not succ:
+            clean_up(road1)
+        else:
+            if len(road1) >= map_size:
+                clean_up(road1)
+                logger.debug('R', 'too long')
+                succ = False
+
     # center point to start point
-    road2 = None
-    while road2 is None:
-        road2 = generate_road(center_point, (dir+2)%4)
-        if road2 is not None:
+    logger.debug('R', 'create_road_v2: generating main road part 2')
+    road2, succ = [], False
+    while not succ:
+        road2, succ = generate_road(center_point, (dir+2)%4)
+        if not succ:
+            clean_up(road2)
+        else:
             if len(road1) + len(road2) + 1 >= map_size * 2:
-                for p in road2:
-                    field[p[0], p[1]] = 0
-                    is_rotate_point[p[0], p[1]] = 0
-                road2 = None
+                clean_up(road2)
+                logger.debug('R', 'too long')
+                succ = False
             elif abs(road2[-1][0] - road1[-1][0]) +\
                 abs(road2[-1][1] - road1[-1][1]) < map_size * 3 // 4:
-                for p in road2:
-                    field[p[0], p[1]] = 0
-                    is_rotate_point[p[0], p[1]] = 0
-                road2 = None
+                clean_up(road2)
+                logger.debug('R', 'too close')
+                succ = False
 
     road2.reverse()
     main_road = road2 + [center_point] + road1
@@ -135,26 +168,29 @@ def create_road_v2(np_random, map_size, num_roads):
             i += 1
         else:
             i += 2
+            
+    logger.debug('R', 'create_road_v2: selectable {}', selectable)
 
     for _ in range(1, num_roads):
-        new_road = None
-        while new_road is None:
+        logger.debug('R', 'create_road_v2: generating road {}', _+1)
+        new_road, succ = [], False
+        while not succ:
             dist = np_random.randint(low=len(selectable)*2//5, high=len(selectable)*4//5)
             new_dir = np_random.randint(4)
             new_start, dist = selectable[dist]
-            new_road = generate_road(new_start, new_dir)
-            if new_road is not None:
+            new_road, succ = generate_road(new_start, new_dir)
+            if not succ:
+                clean_up(new_road)
+            else:
                 if len(new_road) + len(main_road) - dist >= map_size * 2:
-                    for p in new_road:
-                        field[p[0], p[1]] = 0
-                        is_rotate_point[p[0], p[1]] = 0
-                    new_road = None
+                    clean_up(new_road)
+                    logger.debug('R', 'too long')
+                    succ = False
                 elif abs(new_road[-1][0] - main_road[-1][0]) +\
                     abs(new_road[-1][1] - main_road[-1][1]) < map_size * 3 // 4:
-                    for p in new_road:
-                        field[p[0], p[1]] = 0
-                        is_rotate_point[p[0], p[1]] = 0
-                    new_road = None     
+                    clean_up(new_road)
+                    logger.debug('R', 'too close')
+                    succ = False
 
         new_road.reverse()
         new_road += main_road[dist:]
