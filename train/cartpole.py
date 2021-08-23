@@ -1,7 +1,7 @@
 import gym
 from gym.vector.async_vector_env import AsyncVectorEnv
 import Net
-from PPO import Model
+from SamplerPPO import Model
 import Config
 import torch
 from tensorboardX import SummaryWriter
@@ -29,7 +29,7 @@ tenv = env_fn('test')()
 a = Net.FullyConnected([4], [2], None, [64, 128]).to(config.device)
 c = Net.FullyConnected([4], None, [1], [64, 128]).to(config.device)
 
-ppo = Model.PPO(a, c, None, [4], (), config)
+ppo = Model.SamplerPPO(a, c, None, [4], [2], 0, config)
 
 length = [0] * config.num_actors
 states = env.reset()
@@ -82,7 +82,7 @@ while total_step < 100000:
             tstate = tenv.reset()
             tstate = torch.tensor([tstate], dtype=torch.float32)
             while not done:
-                a = ppo.get_action(tstate)
+                a = ppo.get_action(tstate, determinated=True)
                 tns, rew, done, __ = tenv.step(a[0])
                 tstate = torch.tensor([tns], dtype=torch.float32)
                 tstep += 1

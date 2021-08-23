@@ -284,6 +284,13 @@ class SamplerPPO(object):
                     )
                 )
                 vf = torch.nn.functional.mse_loss(ret, value)
+                mean_prob = torch.logsumexp(log_prob, 0)
+                mean_prob_ent = torch.mean(
+                    torch.sum(
+                        - torch.exp(mean_prob) * mean_prob,
+                        -1
+                    )
+                ) / len(slice)
                 entropy = torch.mean(
                     torch.sum(
                         - torch.exp(log_prob) * log_prob,
@@ -291,12 +298,12 @@ class SamplerPPO(object):
                     )
                 )
 
-                loss = - surr + vf * vf_coeff - entropy * ent_coeff
+                loss = - surr + vf * vf_coeff - mean_prob_ent * ent_coeff
                 
                 if torch.isinf(loss).item() or torch.isnan(loss).item():
-                    logger.error('P', 'Loss error {} ({} {} {})', loss.item(), surr.item(), vf.item(), entropy.item())
+                    logger.error('P', 'Loss error {} ({} {} {} {})', loss.item(), surr.item(), vf.item(), entropy.item(), mean_prob_ent.item())
                 
-                losses.append((surr.detach(), vf.detach(), entropy.detach(), loss.detach(), self.step))
+                losses.append((surr.detach(), vf.detach(), entropy.detach(), mean_prob_ent.detach(), loss.detach(), self.step))
                 loss.backward()
 
                 if self.__unified:

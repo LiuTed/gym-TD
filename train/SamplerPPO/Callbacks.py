@@ -34,22 +34,25 @@ def SamplerPPO_train(ppo, states, actions, next_states, rewards, dones, infos, w
     return None
 
 def SamplerPPO_loss_parse(losses, writer, title):
-    surr, vf, ent, ls, step = [], [], [], [], []
+    surr, vf, ent, mpent, ls, step = [], [], [], [], [], []
     for loss in losses:
         surr += map(lambda x: x[0], loss)
         vf += map(lambda x: x[1], loss)
         ent += map(lambda x: x[2], loss)
-        ls += map(lambda x: x[3], loss)
-        step += map(lambda x: x[4], loss)
+        mpent += map(lambda x: x[3], loss)
+        ls += map(lambda x: x[4], loss)
+        step += map(lambda x: x[5], loss)
     for i in range(len(surr)):
         writer.add_scalar(title+'/Surrogate', surr[i], step[i])
         writer.add_scalar(title+'/ValueFunction', vf[i], step[i])
         writer.add_scalar(title+'/Entropy', ent[i], step[i])
+        writer.add_scalar(title+'/MeanProbEntropy', mpent[i], step[i])
         writer.add_scalar(title+'/Loss', ls[i], step[i])
     dict = {
         'SurrogateLoss': surr,
         'ValueFunctionLoss': vf,
         'Entropy': ent,
+        'MeanProbEntropy': mpent,
         'TotalLoss': ls
     }
     return dict
