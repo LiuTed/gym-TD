@@ -10,6 +10,7 @@ writer = print
 LEVEL = 20
 
 ALLOW_REGIONS = []
+DISABLE_REGIONS = []
 ENABLE_ALL_REGION = False
 
 def set_level(level):
@@ -20,16 +21,30 @@ def set_writer(w):
     global writer
     writer = w
 
-def add_region(region):
-    global ALLOW_REGIONS
-    ALLOW_REGIONS.append(region)
+def add_region(*regions):
+    global ALLOW_REGIONS, DISABLE_REGIONS
+    for r in regions:
+        ALLOW_REGIONS.append(r)
+        try:
+            DISABLE_REGIONS.remove(r)
+        except:
+            pass
+
+def remove_region(*regions):
+    global ALLOW_REGIONS, DISABLE_REGIONS
+    for r in regions:
+        DISABLE_REGIONS.append(r)
+        try:
+            ALLOW_REGIONS.remove(r)
+        except:
+            pass
 
 def enable_all_region():
     global ENABLE_ALL_REGION
     ENABLE_ALL_REGION = True
 
 def __region_allowed(region):
-    return ENABLE_ALL_REGION or region in ALLOW_REGIONS
+    return (ENABLE_ALL_REGION or region in ALLOW_REGIONS) and region not in DISABLE_REGIONS
 
 def __output(region, level, prefix, msg, *args, **kwargs):
     global LEVEL

@@ -1,90 +1,11 @@
 import numpy as np
 
 from gym_TD.utils import logger
+from gym_TD.utils import fail_code as FC
 from gym_TD.envs.TDParam import config, hyper_parameters
+from gym_TD.envs.TDElements import *
 
 from gym_TD.envs import TDRoadGen
-
-class Enemy(object):
-    def __init__(self, maxLP, speed, cost, loc, t=None):
-        self.maxLP = self.LP = maxLP
-        self.speed = speed
-        self.cost = cost
-        self.loc = loc
-        self.margin = 0.
-        self.type = t
-    
-    def setLoc(self, newLoc):
-        self.loc = newLoc
-    def damage(self, dmg):
-        self.LP -= dmg
-        if self.LP <= 0:
-            self.LP = 0
-    @property
-    def alive(self):
-        return self.LP > 0
-
-class EnemyBalance(Enemy):
-    def __init__(self, loc):
-        super(EnemyBalance, self).__init__(
-            config.enemy_balance_LP,
-            config.enemy_balance_speed,
-            config.enemy_balance_cost,
-            loc,
-            0
-        )
-class EnemyStrong(Enemy):
-    def __init__(self, loc):
-        super(EnemyStrong, self).__init__(
-            config.enemy_strong_LP,
-            config.enemy_strong_speed,
-            config.enemy_strong_cost,
-            loc,
-            1
-        )
-class EnemyFast(Enemy):
-    def __init__(self, loc):
-        super(EnemyFast, self).__init__(
-            config.enemy_fast_LP,
-            config.enemy_fast_speed,
-            config.enemy_fast_cost,
-            loc,
-            2
-        )
-def _create_enemy(t, loc):
-    classes = {
-        0: EnemyBalance,
-        1: EnemyStrong,
-        2: EnemyFast
-    }
-    return classes[t](loc)
-
-class Tower(object):
-    def __init__(self, atk, rge, loc, cost):
-        self.atklv = 0
-        self.atk = atk
-        self.rangelv = 0
-        self.rge = rge
-        self.loc = loc
-        self.cost = cost
-        self.cd = 0
-
-    def atkUp(self, atk, cost):
-        self.atk += atk
-        self.atklv += 1
-        self.cost += cost
-    def rangeUp(self, rge, cost):
-        self.rge += rge
-        self.rangelv += 1
-        self.cost += cost
-
-def _create_tower(loc):
-    return Tower(
-        config.tower_basic_ATK,
-        config.tower_basic_range,
-        loc,
-        config.tower_basic_cost
-    )
 
 class TDBoard(object):
     '''
@@ -93,8 +14,8 @@ class TDBoard(object):
     def __init__(self, map_size, num_roads, np_random, cost_def, cost_atk, max_cost, base_LP):
         self.map_size = map_size
 
-        self.map = np.zeros(shape=(6, map_size, map_size), dtype=np.int32)
-        # is road, is road1, is road2, is road3, dist to end, where to go
+        self.map = np.zeros(shape=(7, map_size, map_size), dtype=np.int32)
+        # is road, is road1, is road2, is road3, dist to end, where to go, how many towers nearby
         roads = TDRoadGen.create_road(np_random, map_size, num_roads)
         
         self.start = [r[0] for r in roads]
@@ -105,6 +26,7 @@ class TDBoard(object):
             for p in road: # from start to end
                 self.map[0, p[0], p[1]] = 1
                 self.map[i+1, p[0], p[1]] = 1
+                self.map[6, p[0], p[1]] = 1
                 if last is not None:
                     if p[0] - last[0] == 0:
                         if p[1] - last[1] == 1:
@@ -124,8 +46,8 @@ class TDBoard(object):
         
         logger.debug('B', 'Map: {}', self.map)
 
-        self.cnt = np.zeros(shape=(self.map_size, self.map_size, 3), dtype=np.int32)
-        # how many enemies of type [2] at location ([0], [1])
+        self.enemy_LP = np.zeros((4, config.enemy_types, self.map_size, self.map_size), dtype=np.float32)
+        # lowest, highest, average LP, count of enemies
 
         self.enemies = []
         self.towers = []
@@ -138,6 +60,13 @@ class TDBoard(object):
         self.viewer = None
 
         self.steps = 0
+        self.progress = 0.
+
+        self.__fail_code = FC.SUCCESS
+    
+    @property
+    def fail_code(self):
+        return self.__fail_code
     
     def get_states(self):
         '''
@@ -156,16 +85,15 @@ class TDBoard(object):
         11: defender cost
         12: attacker cost
         13: progress of the game
-        [14, 14+natk): tower atk lv is [0, natk]
-        [14+natk, 14+natk+nrange): tower range lv is [0, nrange]
-        [a, a+ol): LP ratio of enemies of type 0
-        [a+ol, a+2ol): LP ratio of enemies of type 1
-        [a+2ol, a+3ol): LP ratio of enemies of type 2
-        [a+3ol, a+4ol): distance margin of enemies of type 0
-        [a+4ol, a+5ol): distance margin of enemies of type 1
-        [a+5ol, a+6ol): distance margin of enemies of type 2
+        14: could build tower
+        [15, 15+# tower lv): tower level is [0, # tower lv)
+        [15+# tower lv, 15+# tower lv+# tower type): tower type is [0, # tower type)
+        [a, a+# enemy type): lowest enemy LP of type [0, # enemy type)
+        [a+# enemy type, a+2 # enemy type): highest enemy LP of type [0, # enemy type)
+        [a+2 # enemy type, a+3 # enemy type): average enemy LP of type [0, # enemy type)
+        [a+3 # enemy type, a+4 # enemy type): number of enemies of type [0, # enemy type)
+        [a+4 # enemy type, a+5 # enemy type): how many enemies could be summoned of type [0, # enemy type)
         '''
-        ptr = np.zeros(shape=(self.map_size, self.map_size, 3), dtype=np.int32)
         s = np.zeros(shape=self.state_shape, dtype=np.float32)
         s[0:4] = self.map[0:4]
         s[4, self.end[0], self.end[1]] = 1
@@ -179,26 +107,27 @@ class TDBoard(object):
         s[9] /= (np.max(self.map[4]) + 1)
         s[11] = self.cost_def / self.max_cost
         s[12] = self.cost_atk / self.max_cost
-        s[13] = self.steps / hyper_parameters.max_episode_steps
+        s[13] = self.progress
+        s[14] = (self.map[6] == 0)
         
-        tower_atk_base = 13
-        tower_range_base = tower_atk_base + len(config.tower_ATKUp_list) + 1
+        tower_lv_base = 15
+        tower_type_base = tower_lv_base + config.max_tower_lv + 1
         for t in self.towers:
-            s[10, t.loc[0], t.loc[1]] = 1
-            s[tower_atk_base+t.atklv, t.loc[0], t.loc[1]] = 1
-            s[tower_range_base+t.rangelv, t.loc[0], t.loc[1]] = 1
+            s[tower_lv_base+t.lv, t.loc[0], t.loc[1]] = 1
+            s[tower_type_base+t.type, t.loc[0], t.loc[1]] = 1
+        
+        enemy_channel_base = tower_type_base + config.tower_types
+        can_summon_base = enemy_channel_base + 4 * config.enemy_types
 
-        enemy_base = tower_range_base + len(config.tower_rangeUp_list) + 1
-        for e in self.enemies:
-            n = ptr[e.loc[0], e.loc[1], e.type]
-            s[enemy_base+hyper_parameters.enemy_overlay_limit*e.type+n, e.loc[0], e.loc[1]] = e.LP/e.maxLP
-            s[enemy_base+hyper_parameters.enemy_overlay_limit*(e.type+3)+n, e.loc[0], e.loc[1]] = e.margin
-            ptr[e.loc[0], e.loc[1], e.type] += 1
+        s[enemy_channel_base: can_summon_base] = self.enemy_LP.reshape((4*config.enemy_types, self.map_size, self.map_size))
+        for t in range(config.enemy_types):
+            s[can_summon_base + t] = self.cost_def / config.enemy_cost[t][0] / hyper_parameters.max_cluster_length
+
         return s
     
     @staticmethod
     def n_channels():
-        return 15 + len(config.tower_ATKUp_list) + len(config.tower_rangeUp_list) + 6*hyper_parameters.enemy_overlay_limit
+        return 15 + config.tower_types + config.max_tower_lv + 1 + 5 * config.enemy_types
     @property
     def state_shape(self):
         return (self.n_channels(), self.map_size, self.map_size)
@@ -207,147 +136,144 @@ class TDBoard(object):
         return pos[0] >= 0 and pos[0] < self.map_size and pos[1] >= 0 and pos[1] < self.map_size
     
     def summon_enemy(self, t, start_id):
-        logger.debug('B', 'summon_enemy: {}, {}', t, start_id)
-        e = _create_enemy(t, self.start[start_id])
+        start = self.start[start_id]
+        lv = 1 if self.progress >= config.enemy_upgrade_at else 0
+        logger.debug('B', 'summon_enemy: {}, {} ({},{})', t, start_id, start[0], start[1])
+        e = create_enemy(t, start, self.map[4, start[0], start[1]], lv)
         if self.cost_atk < e.cost:
             logger.verbose('B', 'Summon enemy {} failed due to cost shortage', t)
-            return False
-        if self.cnt[self.start[start_id][0], self.start[start_id][1], t] >= hyper_parameters.enemy_overlay_limit:
-            logger.verbose('B', 'Summon enemy {} failed due to the limit of overlay unit', t)
+            self.__fail_code = FC.COST_SHORTAGE
             return False
         logger.debug('B', 'Summon enemy {}', t)
         self.enemies.append(e)
         self.cost_atk -= e.cost
-        self.cnt[self.start[start_id][0], self.start[start_id][1], t] += 1
+        self.__fail_code = FC.SUCCESS
         return True
     
     def summon_cluster(self, types, start_id):
-        logger.debug('B', 'summon_cluster: {}, {}', types, start_id)
+        start = self.start[start_id]
+        lv = 1 if self.progress >= config.enemy_upgrade_at else 0
+        logger.debug('B', 'summon_cluster: {}, {} ({},{})', types, start_id, start[0], start[1])
         enemies = []
         costs = []
         for t in types:
-            if t == 3:
+            if t == config.enemy_types:
                 continue
-            e = _create_enemy(t, self.start[start_id])
+            e = create_enemy(t, start, self.map[4, start[0], start[1]], lv)
             costs.append(e.cost)
             enemies.append(e)
+        if self.max_cost < sum(costs):
+            logger.verbose('B', 'Summon cluster {} failed due to cost shortage', types)
+            self.__fail_code = FC.IMPOSSIBLE_CLUSTER
+            return False
         if self.cost_atk < sum(costs):
             logger.verbose('B', 'Summon cluster {} failed due to cost shortage', types)
+            self.__fail_code = FC.COST_SHORTAGE
             return False
-        ut, ucnt = np.unique(types, return_counts=True)
-        for t, n in zip(ut, ucnt):
-            if t == 3:
-                continue
-            cnt = self.cnt[self.start[start_id][0], self.start[start_id][1], t]
-            if cnt + n > hyper_parameters.enemy_overlay_limit:
-                logger.verbose(
-                    'B',
-                    'Summon cluster {} failed due to the limit of overlay unit of type {} ({}+{}/{})',
-                    types, t, cnt, n, hyper_parameters.enemy_overlay_limit
-                )
-                return False
         self.enemies += enemies
         self.cost_atk -= sum(costs)
-        for t, n in zip(ut, ucnt):
-            if t == 3:
-                continue
-            self.cnt[self.start[start_id][0], self.start[start_id][1], t] += n
+        self.__fail_code = FC.SUCCESS
         return True
 
-    def tower_build(self, loc):
-        t = _create_tower(loc)
-        if self.cost_def < t.cost:
-            logger.verbose('B', 'Build tower ({},{}) failed due to cost shortage', loc[0], loc[1])
+    def tower_build(self, t, loc):
+        p = create_tower(t, loc)
+        if self.cost_def < p.cost:
+            logger.verbose('B', 'Build tower {} ({},{}) failed due to cost shortage', t, loc[0], loc[1])
+            self.__fail_code = FC.COST_SHORTAGE
             return False
-        if self.map[0, loc[0], loc[1]] == 1:
-            logger.verbose('B', 'Cannot overlay tower at ({},{})', loc[0], loc[1])
+        if self.map[6, loc[0], loc[1]] > 0:
+            logger.verbose('B', 'Cannot build tower {} at ({},{})', t, loc[0], loc[1])
+            self.__fail_code = FC.INVALID_POSITION
             return False
-        logger.debug('B', 'Build tower ({},{})', loc[0], loc[1])
-        self.towers.append(t)
-        self.cost_def -= t.cost
+        logger.debug('B', 'Build tower {} ({},{})', t, loc[0], loc[1])
+        self.towers.append(p)
+        self.cost_def -= p.cost
+        for i in range(-config.tower_distance, config.tower_distance+1):
+            for j in range(-config.tower_distance, config.tower_distance+1):
+                if abs(i) + abs(j) <= config.tower_distance:
+                    r, c = loc[0]+i, loc[1]+j
+                    if r < 0 or r >= self.map_size or c < 0 or c >= self.map_size:
+                        continue
+                    self.map[6, r, c] += 1
+        self.__fail_code = FC.SUCCESS
         return True
 
-    def tower_atkup(self, loc):
+    def tower_lvup(self, loc):
         for t in self.towers:
             if loc == t.loc:
-                if t.atklv >= len(config.tower_ATKUp_cost):
-                    logger.verbose('B', 'Tower ATK up ({},{}) failed due to atk lv max', loc[0], loc[1])
+                if t.lv >= config.max_tower_lv:
+                    logger.verbose('B', 'Tower LV up ({},{}) failed because lv max', loc[0], loc[1])
+                    self.__fail_code = FC.LV_MAX
                     return False
-                cost = config.tower_ATKUp_cost[t.atklv]
-                atkup = config.tower_ATKUp_list[t.atklv]
+                cost = config.tower_cost[t.type][t.lv+1]
                 if self.cost_def < cost:
-                    logger.verbose('B', 'Tower ATK up ({},{}) failed due to cost shortage', loc[0], loc[1])
+                    logger.verbose('B', 'Tower LV up ({},{}) failed due to cost shortage', loc[0], loc[1])
+                    self.__fail_code = FC.COST_SHORTAGE
                     return False
-                logger.debug('B', 'Tower ATK up ({},{})', loc[0], loc[1])
+                if not upgrade_tower(t):
+                    logger.verbose('B', 'Tower LV up ({},{}) failed', loc[0], loc[1])
+                    self.__fail_code = FC.LV_MAX
+                    return False
+                logger.debug('B', 'Tower LV up ({},{})', loc[0], loc[1])
                 self.cost_def -= cost
-                t.atkUp(atkup, cost)
-                return True
-        logger.verbose('No tower at ({},{})', loc[0], loc[1])
-        return False
-
-    def tower_rangeup(self, loc):
-        for t in self.towers:
-            if loc == t.loc:
-                if t.rangelv >= len(config.tower_rangeUp_cost):
-                    logger.verbose('B', 'Tower range up ({},{}) failed due to range lv max', loc[0], loc[1])
-                    return False
-                cost = config.tower_rangeUp_cost[t.rangelv]
-                rangeup = config.tower_rangeUp_list[t.rangelv]
-                if self.cost_def < cost:
-                    logger.verbose('B', 'Tower range up ({},{}) failed due to cost shortage', loc[0], loc[1])
-                    return False
-                logger.debug('B', 'Tower range up ({},{})', loc[0], loc[1])
-                self.cost_def -= cost
-                t.rangeUp(rangeup, cost)
+                self.__fail_code = FC.SUCCESS
                 return True
         logger.verbose('B', 'No tower at ({},{})', loc[0], loc[1])
+        self.__fail_code = FC.UNKNOWN_TARGET
         return False
 
     def tower_destruct(self, loc):
         for t in self.towers:
             if loc == t.loc:
                 self.cost_def += t.cost * config.tower_destruct_return
+                self.cost_def = min(self.cost_def, self.max_cost)
                 self.towers.remove(t)
                 logger.debug('B', 'Destruct tower ({},{})', loc[0], loc[1])
+
+                for i in range(-config.tower_distance, config.tower_distance+1):
+                    for j in range(-config.tower_distance, config.tower_distance+1):
+                        if abs(i) + abs(j) <= config.tower_distance:
+                            r, c = loc[0]+i, loc[1]+j
+                            if r < 0 or r >= self.map_size or c < 0 or c >= self.map_size:
+                                continue
+                            self.map[6, r, c] -= 1
+
+                self.__fail_code = FC.SUCCESS
                 return True
         logger.verbose('B', 'No tower at ({},{})', loc[0], loc[1])
+        self.__fail_code = FC.UNKNOWN_TARGET
         return False
     
     def step(self):
         # Forward the game one time step.
         # Return the reward for the defender.
-        def dist(a, b):
-            return abs(a[0]-b[0])+abs(a[1]-b[1])
         reward = 0.
         reward += config.reward_time
         self.steps += 1
+        self.progress = self.steps / hyper_parameters.max_episode_steps
         logger.debug('B', 'Step: {}->{}', self.steps-1, self.steps)
+
+        to_del = []
+        self.enemies.sort(key=lambda x: x.dist - x.margin)
         for t in self.towers:
             t.cd -= 1
             if t.cd > 0: # attack cool down
                 continue
-            attackable = []
-            for e in self.enemies:
-                if dist(e.loc, t.loc) <= t.rge:
-                    attackable.append(e)
-            attackable.sort(key=lambda x: self.map[4, x.loc[0], x.loc[1]] - x.margin)
-            if len(attackable) > 0:
-                e = attackable[0]
-                e.damage(t.atk)
-                t.cd = config.tower_attack_interval
-                logger.debug('B',
-                    'Attack: ({},{})->({},{},{},{})',
-                    t.loc[0], t.loc[1], e.loc[0], e.loc[1], e.margin, e.type
-                )
-                if not e.alive:
-                    logger.debug('B', 'Kill')
-                    self.enemies.remove(e)
-                    reward += config.reward_kill
+            killed = t.attack(self.enemies)
+            to_del += [e for e in killed if e not in to_del]
+        
+        reward += config.reward_kill * len(to_del)
+        for e in to_del:
+            self.enemies.remove(e)
 
         dp = [[0,1], [0,-1], [1,0], [-1,0]]
         toremove = []
         for e in self.enemies:
-            e.margin += e.speed
+            if e.slowdown > 0:
+                e.margin += e.speed * config.frozen_ratio
+                e.slowdown -= 1
+            else:
+                e.margin += e.speed
             while e.margin >= 1.:
                 # move to next grid
                 e.margin -= 1.
@@ -356,11 +282,10 @@ class TDBoard(object):
                     e.loc[0] + dp[d][0],
                     e.loc[1] + dp[d][1]
                 ]
-                self.cnt[e.loc[0], e.loc[1], e.type] -= 1
-                e.setLoc(p)
-                self.cnt[p[0], p[1], e.type] += 1
+                e.move(p, self.map[4, p[0], p[1]])
                 if e.loc == self.end:
-                    reward -= config.penalty_leak
+                    if self.base_LP is not None and self.base_LP > 0:
+                        reward -= config.penalty_leak
                     logger.debug('B', 'Leak {}', e.type)
                     toremove.append(e)
                     if self.base_LP is not None:
@@ -369,15 +294,26 @@ class TDBoard(object):
                     break
         for e in toremove:
             self.enemies.remove(e)
-            self.cnt[e.loc[0], e.loc[1], e.type] -= 1
         
-        progress = self.steps / hyper_parameters.max_episode_steps
-        if progress >= 0.5:
+        if self.progress >= 0.5:
             attacker_cost_rate = config.attacker_cost_final_rate
         else:
-            attacker_cost_rate = config.attacker_cost_init_rate * (1. - progress) + config.attacker_cost_final_rate * progress
+            attacker_cost_rate = config.attacker_cost_init_rate * (1. - self.progress) + config.attacker_cost_final_rate * self.progress
         self.cost_atk = min(self.cost_atk+attacker_cost_rate, self.max_cost)
         self.cost_def = min(self.cost_def+config.defender_cost_rate, self.max_cost)
+
+        self.enemy_LP[:] = 0
+        self.enemy_LP[0] = 1.
+        for e in self.enemies:
+            r = e.LP / e.maxLP
+            self.enemy_LP[0, e.type, e.loc[0], e.loc[1]] = min(self.enemy_LP[0, e.type, e.loc[0], e.loc[1]], r)
+            self.enemy_LP[1, e.type, e.loc[0], e.loc[1]] = max(self.enemy_LP[1, e.type, e.loc[0], e.loc[1]], r)
+            self.enemy_LP[2, e.type, e.loc[0], e.loc[1]] += r
+            self.enemy_LP[3, e.type, e.loc[0], e.loc[1]] += 1
+        self.enemy_LP[0] = np.where(self.enemy_LP[3] > 0, self.enemy_LP[0], np.zeros_like(self.enemy_LP[0]))
+        self.enemy_LP[2] = np.where(self.enemy_LP[3] > 0, self.enemy_LP[2] / self.enemy_LP[3], np.zeros_like(self.enemy_LP[2]))
+        self.enemy_LP[3] /= hyper_parameters.max_cluster_length
+
         logger.debug('B', 'Reward: {}', reward)
         return reward
     
@@ -386,21 +322,66 @@ class TDBoard(object):
             or self.steps >= hyper_parameters.max_episode_steps
     
     def render(self, mode):
-        screen_width = 600
-        screen_height = 600
+        screen_width = 800
+        screen_height = 800
         cost_bar_height = 15
+        sample_height = 15
+        enemy_color = [
+            [1, 0, .5],
+            [1, .5, 1],
+            [.5, 0, 1],
+            [.71, .29, .71]
+        ]
+        bar_color = [
+            [0,.5,1], # min LP
+            [1,.5,0], # max LP
+            [1,1,.5], # avg LP
+            [.5,1,1] # nums
+        ]   
+        tower_colors = [
+            [.5, 1, 0],
+            [0, .5, 0],
+            [0, 1, .5],
+            [.29, .71, .29]
+        ]
         if self.viewer is None: #draw permanent elements here
             from gym.envs.classic_control import rendering
             
-            self.viewer = rendering.Viewer(screen_width, screen_height+cost_bar_height)
+            self.viewer = rendering.Viewer(screen_width, screen_height+cost_bar_height+sample_height)
             # create viewer
-            background = rendering.FilledPolygon([
-                (0, 0), (0, screen_height),
-                (screen_width, screen_height), (screen_width, 0)
-            ])
-            background.set_color(1,1,1)
-            self.viewer.add_geom(background)
-            # draw background
+            # background = rendering.FilledPolygon([
+            #     (0, 0), (0, screen_height),
+            #     (screen_width, screen_height), (screen_width, 0)
+            # ])
+            # background.set_color(1,1,1)
+            # self.viewer.add_geom(background)
+            # # draw background
+
+            for i in range(4):
+                left, right, top, bottom = \
+                    sample_height*i,\
+                    sample_height*(i+1),\
+                    screen_height+sample_height,\
+                    screen_height
+                enemy_sample = rendering.FilledPolygon([
+                            (left, bottom), (left, top),
+                            (right, top), (right, bottom)
+                        ])
+                enemy_sample.set_color(*enemy_color[i])
+                self.viewer.add_geom(enemy_sample)
+            for i in range(4):
+                left, right, top, bottom = \
+                    sample_height*(i+4),\
+                    sample_height*(i+5),\
+                    screen_height+sample_height,\
+                    screen_height
+                tower_sample = rendering.FilledPolygon([
+                            (left, bottom), (left, top),
+                            (right, top), (right, bottom)
+                        ])
+                tower_sample.set_color(*tower_colors[i])
+                self.viewer.add_geom(tower_sample)
+
             for i in range(self.map_size+1):
                 gridLine = rendering.Line(
                     (0, screen_height * i // self.map_size),
@@ -461,8 +442,8 @@ class TDBoard(object):
         # draw changable elements here
         # attacker cost bar
         left, right, top, bottom = \
-            0, int(screen_width*(self.cost_atk/self.max_cost)//2), \
-            screen_height+cost_bar_height, screen_height
+            0, screen_width*(self.cost_atk/self.max_cost)/3, \
+            screen_height+cost_bar_height+sample_height, screen_height+sample_height
         self.viewer.draw_polygon(
             v=[
                 (left, bottom), (left, top),
@@ -472,8 +453,8 @@ class TDBoard(object):
         )
         # defender cost bar
         left, right, top, bottom = \
-            screen_width//2, int(screen_width*(1+self.cost_def/self.max_cost)//2), \
-            screen_height+cost_bar_height, screen_height
+            screen_width/3, screen_width*(1+self.cost_def/self.max_cost)/3, \
+            screen_height+cost_bar_height+sample_height, screen_height+sample_height
         self.viewer.draw_polygon(
             v=[
                 (left, bottom), (left, top),
@@ -481,58 +462,87 @@ class TDBoard(object):
             ],
             color=(0, .3, 1)
         )
+        # progress bar
+        left, right, top, bottom = \
+            screen_width*2/3, screen_width*(2+self.progress)/3, \
+            screen_height+cost_bar_height+sample_height, screen_height+sample_height
+        self.viewer.draw_polygon(
+            v=[
+                (left, bottom), (left, top),
+                (right, top), (right, bottom)
+            ],
+            color=(1, 1, 0)
+        )
+
+        
+        for r in range(self.map_size):
+            for c in range(self.map_size):
+                if self.map[6,r,c] >= 1 and self.map[0,r,c] == 0:
+                    left, right, top, bottom = \
+                        screen_width * c // self.map_size, \
+                        screen_width * (c+1) // self.map_size, \
+                        screen_height * (r+1) // self.map_size, \
+                        screen_height * r // self.map_size
+                    self.viewer.draw_polygon(
+                        v=[
+                            (left, bottom), (left, top),
+                            (right, top), (right, bottom)
+                        ],
+                        color = (.8, .8, .8)
+                    )
+        # show where tower could not be built
 
         block_width = screen_width // self.map_size
         block_height = screen_height // self.map_size
-        for e in self.enemies:
-            left, right, top, bottom = \
-                screen_width * e.loc[1] // self.map_size, \
-                screen_width * (e.loc[1]+1) // self.map_size, \
-                screen_height * (e.loc[0]+1) // self.map_size, \
-                screen_height * e.loc[0] // self.map_size
-            lbheight = screen_height * e.loc[0] // self.map_size
-            lblen = int(e.LP / e.maxLP * 3 / 8 * block_width + .5)
-            cbheight = screen_height * e.loc[0] // self.map_size
-            cblen = int(self.cnt[e.loc[0], e.loc[1], e.type] * 3 / 8 / hyper_parameters.enemy_overlay_limit * block_width + .5)
-            #LP bar
-            if e.type == 0: #left up
-                left += block_width // 16
-                right -= block_width * 9 // 16
-                top -= block_height // 24
-                bottom += block_height * 7 // 12
-                color = (0.6, 0.2, 0.2)
-                lbheight += block_height * 13 // 24
-                cbheight += block_height // 2
-            elif e.type == 1: #right up
-                left += block_width * 9 // 16
-                right -= block_width // 16
-                top -= block_height // 24
-                bottom += block_height * 7 // 12
-                color = (0.2, 0.6, 0.2)
-                lbheight += block_height * 13 // 24
-                cbheight += block_height // 2
-            elif e.type == 2: #bottom center
-                left += block_width * 5 // 16
-                right -= block_width * 5 // 16
-                top -= block_height * 13 // 24
-                bottom += block_height // 12
-                color = (0.2, 0.2, 0.6)
-                lbheight += block_height // 24
-            self.viewer.draw_polygon(
-                v = [
-                    (left, bottom), (left, top),
-                    (right, top), (right, bottom)
-                ],
-                color = color
-            )
-            self.viewer.draw_line(
-                (left, lbheight), (left + lblen, lbheight),
-                color = (0, 1, 0)
-            )
-            self.viewer.draw_line(
-                (left, cbheight), (left + cblen, cbheight),
-                color = (0, 1, 0)
-            )
+        
+        enemy_offset = [
+            [0, 0], # left bottom
+            [block_width//2, 0], # right bottom
+            [0, block_height//2], # left up
+            [block_width//2, block_height//2] # right up
+        ]
+        mg16 = block_width / 16 # margin 1-16th
+        mg8 = block_width / 8
+        mg4 = block_width / 4
+        mg316 = mg16*3
+        mg716 = mg16*7
+        mg38 = mg8*3
+        bar_length = mg4
+
+        for r in range(self.map_size):
+            for c in range(self.map_size):
+                if self.map[0,r,c] == 1:
+                    left, bottom = \
+                        screen_width * c // self.map_size, \
+                        screen_height * r // self.map_size
+                    for t in range(config.enemy_types):
+                        if self.enemy_LP[1, t, r, c] == 0:
+                            continue
+                        l, b = left + enemy_offset[t][0], bottom + enemy_offset[t][1]
+                        self.viewer.draw_polygon(
+                            v=[
+                                (l+mg8, b+mg316), (l+mg8, b+mg716),
+                                (l+mg38, b+mg716), (l+mg38, b+mg316)
+                            ],
+                            color=enemy_color[t]
+                        )
+                        self.viewer.draw_line(
+                            (l+mg8, b+mg16), (l+mg8+bar_length*self.enemy_LP[3,t,r,c], b+mg16),
+                            color=bar_color[3]
+                        )
+                        self.viewer.draw_line(
+                            (l+mg8, b+mg8), (l+mg8+bar_length*self.enemy_LP[1,t,r,c], b+mg8),
+                            color=bar_color[1]
+                        )
+                        self.viewer.draw_line(
+                            (l+mg8, b+mg8), (l+mg8+bar_length*self.enemy_LP[2,t,r,c], b+mg8),
+                            color=bar_color[2]
+                        )
+                        self.viewer.draw_line(
+                            (l+mg8, b+mg8), (l+mg8+bar_length*self.enemy_LP[0,t,r,c], b+mg8),
+                            color=bar_color[0]
+                        )
+        # draw enemies
         
         for t in self.towers:
             left, right, top, bottom = \
@@ -545,26 +555,19 @@ class TDBoard(object):
                     (left, bottom), (left, top),
                     (right, top), (right, bottom)
                 ],
-                color = (.2, .8, .8)
+                color = tower_colors[t.type]
             )
+            maxlv = config.max_tower_lv
             self.viewer.draw_polygon(
                 v=[
-                    (left+block_width//5, bottom),
-                    (left+block_width//5, bottom+block_height//3*(t.atklv+1)),
-                    (left+block_width*2//5, bottom+block_height//3*(t.atklv+1)),
-                    (left+block_width*2//5, bottom),
+                    (left+block_width//3, bottom),
+                    (left+block_width//3, bottom+block_height//(maxlv+1)*(t.lv+1)),
+                    (left+block_width*2//3, bottom+block_height//(maxlv+1)*(t.lv+1)),
+                    (left+block_width*2//3, bottom),
                 ],
                 color = (0, 1, 0)
             )
-            self.viewer.draw_polygon(
-                v=[
-                    (left+block_width*3//5, bottom),
-                    (left+block_width*3//5, bottom+block_height//3*(t.rangelv+1)),
-                    (left+block_width*4//5, bottom+block_height//3*(t.rangelv+1)),
-                    (left+block_width*4//5, bottom),
-                ],
-                color = (0, 1, 0)
-            )
+        # draw towers
             
         if self.base_LP is not None:
             left, bottom = \

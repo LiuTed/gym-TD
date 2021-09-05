@@ -15,13 +15,14 @@ class TDAttack(TDGymBasic):
         'video.frames_per_second': hyper_parameters.video_frames_per_second
     }
 
-    def __init__(self, map_size, seed = None):
-        super(TDAttack, self).__init__(map_size, seed)
-        self.action_space = spaces.Box(low=0, high=3, shape=(hyper_parameters.max_num_of_roads, hyper_parameters.max_cluster_length), dtype=np.int64)
+    def __init__(self, map_size, difficulty = 1, seed = None, fixed_seed = False, random_agent = True):
+        super(TDAttack, self).__init__(map_size, seed, fixed_seed, random_agent)
+        self.action_space = spaces.Box(low=0, high=config.enemy_types, shape=(hyper_parameters.max_num_of_roads, hyper_parameters.max_cluster_length), dtype=np.int64)
+        self.difficulty = difficulty
         self.name = "TDAttack"
 
     def empty_action(self):
-        return np.full((hyper_parameters.max_num_of_roads, hyper_parameters.max_cluster_length), 3)
+        return np.full((hyper_parameters.max_num_of_roads, hyper_parameters.max_cluster_length), config.enemy_types)
 
     def step(self, action):
         err_msg = "%r (%s) invalid" % (action, type(action))
@@ -31,16 +32,20 @@ class TDAttack(TDGymBasic):
         self.defender_cd = max(self.defender_cd-1, 0)
         
         real_act = np.copy(action)
+        fail_code = []
         if self.attacker_cd == 0:
             for i in range(self.num_roads):
                 cluster = action[i]
+                if np.all(cluster == config.enemy_types):
+                    fail_code.append(0)
+                    continue
                 if self._board.summon_cluster(cluster, i):
                     self.attacker_cd = config.attacker_action_interval
                 else:
-                    real_act[i] = 3
+                    real_act[i] = config.enemy_types
+                fail_code.append(self._board.fail_code)
         
-        # self.random_tower_lv0()
-        self.random_tower_lv1()
+        getattr(self, 'random_tower_lv{}'.format(self.difficulty))()
 
         reward = -self._board.step()
         done = self._board.done()
@@ -48,4 +53,4 @@ class TDAttack(TDGymBasic):
         win = None
         if done:
             win = self._board.base_LP is None or self._board.base_LP <= 0
-        return states, reward, done, {'RealAction': real_act, 'Win': win, 'AllowNextMove': self.attacker_cd <= 1}
+        return states, reward, done, {'RealAction': real_act, 'Win': win, 'AllowNextMove': self.attacker_cd <= 1, 'FailCode': fail_code}
