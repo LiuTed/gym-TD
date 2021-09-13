@@ -9,43 +9,43 @@ class Config(object):
         self.enemy_LP = [
             [820, 1700],
             [2050, 3000],
-            [6000, 10000],
+            [6000, 8000], # [6000, 10000],
             [8000, 12000]
         ]
 
         self.enemy_speed = [
-            [.25, .25],
-            [.13, .13],
-            [.1, .1],
-            [.1, .1]
+            [.25, .25], # 0.38
+            [.13, .13], # 0.2
+            [.1, .1], # 0.15
+            [.1, .1] # 0.15
         ]
 
         self.enemy_defense = [
             [0, 0],
-            [250, 300],
-            [600, 900], # [800, 1000]
-            [120, 200] # [80, 100]
+            [200, 250], # [250, 300]
+            [600, 800], # [800, 1000]
+            [80, 100] # [80, 100]
         ]
 
         self.enemy_cost = [
-            [5, 5],
+            [8, 8],
             [15, 15],
             [40, 40],
             [30, 30]
         ]
 
         self.tower_attack = [
-            [337, 454],
-            [819, 1036], # [546, 691]
+            [454, 540],
+            [651, 771], # [543, 643],
             [566, 691],
-            [348, 448]
+            [358, 424] # [448, 530]
         ]
 
         self.tower_range = [
-            [4, 4],
             [3, 3],
-            [5, 5],
-            [3, 3]
+            [2, 2],
+            [4, 4], # [4, 4]
+            [3, 3] # [3, 3]
         ]
 
         self.tower_splash_range = [
@@ -59,22 +59,22 @@ class Config(object):
             [10, 10],
             [17, 17],
             [23, 23],
-            [12, 12]
+            [12, 12] # [12, 12]
         ]
 
         self.tower_attack_interval = [
-            [6, 6], # [5, 5]
-            [12, 12], # [8, 8]
-            [8, 8], # [14, 14]
-            [9.5, 9.5]
+            [2, 2], # [5, 5]
+            [4, 4], # [8, 8]
+            [7, 7], # [14, 14]
+            [4.75, 4.75] # [9.5, 9.5]
         ]
 
         self.tower_destruct_return = .5
 
-        self.frozen_time = 4
+        self.frozen_time = 2
         self.frozen_ratio = .2
 
-        self.attacker_init_cost = 10
+        self.attacker_init_cost = 0
         self.defender_init_cost = 10
         self.base_LP = 5
         self.max_cost = 100
@@ -104,10 +104,10 @@ def getConfig():
 
 class HyperParameters(object):
     def __init__(self):
-        super(HyperParameters, self).__setattr__('max_episode_steps', 800)
+        super(HyperParameters, self).__setattr__('max_episode_steps', 1200)
         super(HyperParameters, self).__setattr__('video_frames_per_second', 50)
         super(HyperParameters, self).__setattr__('allow_multiple_actions', False)
-        super(HyperParameters, self).__setattr__('max_cluster_length', 10)
+        super(HyperParameters, self).__setattr__('max_cluster_length', 8)
         super(HyperParameters, self).__setattr__('max_num_of_roads', 3)
     def __setattr__(self, name: str, value) -> None:
         raise RuntimeError('You are not supposed to modify hyper parameters during runtime.')

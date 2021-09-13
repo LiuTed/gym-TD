@@ -1,3 +1,4 @@
+from random import sample
 import numpy as np
 
 from gym_TD.utils import logger
@@ -256,10 +257,12 @@ class TDBoard(object):
         to_del = []
         self.enemies.sort(key=lambda x: x.dist - x.margin)
         for t in self.towers:
-            t.cd -= 1
-            if t.cd > 0: # attack cool down
+            t.cd -= 1 # cool down
+            if t.cd > 0:
                 continue
             killed = t.attack(self.enemies)
+            if t.cd < 0:
+                t.cd = 0
             to_del += [e for e in killed if e not in to_del]
         
         reward += config.reward_kill * len(to_del)
@@ -326,13 +329,13 @@ class TDBoard(object):
         screen_height = 800
         cost_bar_height = 15
         sample_height = 15
-        enemy_color = [
+        enemy_colors = [
             [1, 0, .5],
             [1, .5, 1],
             [.5, 0, 1],
             [.71, .29, .71]
         ]
-        bar_color = [
+        bar_colors = [
             [0,.5,1], # min LP
             [1,.5,0], # max LP
             [1,1,.5], # avg LP
@@ -357,7 +360,7 @@ class TDBoard(object):
             # self.viewer.add_geom(background)
             # # draw background
 
-            for i in range(4):
+            for i in range(len(enemy_colors)):
                 left, right, top, bottom = \
                     sample_height*i,\
                     sample_height*(i+1),\
@@ -367,12 +370,22 @@ class TDBoard(object):
                             (left, bottom), (left, top),
                             (right, top), (right, bottom)
                         ])
-                enemy_sample.set_color(*enemy_color[i])
+                enemy_sample.set_color(*enemy_colors[i])
                 self.viewer.add_geom(enemy_sample)
-            for i in range(4):
+            left, right = \
+                sample_height * len(enemy_colors),\
+                sample_height * (len(enemy_colors) + 1)
+            for i in range(len(bar_colors)):
+                top = screen_height + sample_height * (i+1) / (len(bar_colors)+1)
+                bar_sample = rendering.Line(
+                    (left, top), (right, top)
+                )
+                bar_sample.set_color(*bar_colors[i])
+                self.viewer.add_geom(bar_sample)
+            for i in range(len(tower_colors)):
                 left, right, top, bottom = \
-                    sample_height*(i+4),\
-                    sample_height*(i+5),\
+                    sample_height*(i+len(enemy_colors)+1),\
+                    sample_height*(i+len(enemy_colors)+2),\
                     screen_height+sample_height,\
                     screen_height
                 tower_sample = rendering.FilledPolygon([
@@ -524,23 +537,23 @@ class TDBoard(object):
                                 (l+mg8, b+mg316), (l+mg8, b+mg716),
                                 (l+mg38, b+mg716), (l+mg38, b+mg316)
                             ],
-                            color=enemy_color[t]
+                            color=enemy_colors[t]
                         )
                         self.viewer.draw_line(
                             (l+mg8, b+mg16), (l+mg8+bar_length*self.enemy_LP[3,t,r,c], b+mg16),
-                            color=bar_color[3]
+                            color=bar_colors[3]
                         )
                         self.viewer.draw_line(
                             (l+mg8, b+mg8), (l+mg8+bar_length*self.enemy_LP[1,t,r,c], b+mg8),
-                            color=bar_color[1]
+                            color=bar_colors[1]
                         )
                         self.viewer.draw_line(
                             (l+mg8, b+mg8), (l+mg8+bar_length*self.enemy_LP[2,t,r,c], b+mg8),
-                            color=bar_color[2]
+                            color=bar_colors[2]
                         )
                         self.viewer.draw_line(
                             (l+mg8, b+mg8), (l+mg8+bar_length*self.enemy_LP[0,t,r,c], b+mg8),
-                            color=bar_color[0]
+                            color=bar_colors[0]
                         )
         # draw enemies
         
@@ -567,6 +580,10 @@ class TDBoard(object):
                 ],
                 color = (0, 1, 0)
             )
+            if t.cd > 0:
+                self.viewer.draw_line(
+                    (left, bottom), (left+block_width*t.cd/t.intv, bottom), color=(0,1,0)
+                )
         # draw towers
             
         if self.base_LP is not None:

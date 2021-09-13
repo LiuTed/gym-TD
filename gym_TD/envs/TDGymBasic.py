@@ -212,7 +212,13 @@ class TDGymBasic(gym.Env):
                     else:
                         p -= ratio[i]
                 
-                t = [2, 0, 1, 3][t]
+                t = [2, 0, 1, 0][t]
+                if self.random_agent:
+                    p = random.random()
+                else:
+                    p = self.np_random.random()
+                if p < 0.2:
+                    t = 3
 
                 for r in range(self.map_size):
                     for c in range(self.map_size):

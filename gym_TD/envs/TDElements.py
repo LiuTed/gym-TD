@@ -16,8 +16,11 @@ class Enemy(object):
     def move(self, newLoc, newDist):
         self.loc = newLoc
         self.dist = newDist
-    def damage(self, atk):
-        dmg = max(atk - self.defense, 0)
+    def damage(self, atk, magic=False):
+        if magic:
+            dmg = atk
+        else:
+            dmg = max(atk - self.defense, 0)
         if dmg < atk * .05:
             dmg = atk * .05
         self.LP -= dmg
@@ -63,14 +66,26 @@ class Tower(object):
         pass
     @staticmethod
     def dist(a, b):
-        return abs(a[0]-b[0]) + abs(a[1]-b[1])
+        return max(abs(a[0]-b[0]), abs(a[1]-b[1]))
 
-class TowerSingle(Tower):
+class TowerArrow(Tower):
     def attack(self, enemies):
         to_del = []
         for e in enemies:
             if self.dist(e.loc, self.loc) <= self.rge:
                 e.damage(self.atk)
+                self.cd += self.intv
+                if not e.alive:
+                    to_del.append(e)
+                break
+        return to_del
+
+class TowerMagic(Tower):
+    def attack(self, enemies):
+        to_del = []
+        for e in enemies:
+            if self.dist(e.loc, self.loc) <= self.rge:
+                e.damage(self.atk, True)
                 self.cd += self.intv
                 if not e.alive:
                     to_del.append(e)
@@ -97,21 +112,29 @@ class TowerBomb(Tower):
 class TowerFrozen(Tower):
     def attack(self, enemies):
         to_del = []
+        target = None
         for e in enemies:
             if self.dist(e.loc, self.loc) <= self.rge:
-                e.damage(self.atk)
+                target = e
                 self.cd += self.intv
-                if not e.alive:
-                    to_del.append(e)
-                else:
-                    e.slowdown = config.frozen_time
                 break
+        if target is not None:
+            cnt = 0
+            for e in enemies:
+                if self.dist(target.loc, e.loc) <= self.dmgrge:
+                    e.damage(self.atk, True)
+                    e.slowdown = config.frozen_time
+                    cnt += 1
+                    if not e.alive:
+                        to_del.append(e)
+                if cnt >= 1:
+                    break
         return to_del
 
 def create_tower(t, loc):
     tower_classes = {
-        0: TowerSingle,
-        1: TowerSingle,
+        0: TowerArrow,
+        1: TowerMagic,
         2: TowerBomb,
         3: TowerFrozen
     }
