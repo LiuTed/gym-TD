@@ -33,8 +33,29 @@ if __name__ == '__main__':
                 val.tarball = f
                 results[res.group(1)] = val
     
+    def get_size(start, human = True):
+        ts = 0
+        unit = 0
+        if os.path.islink(start):
+            return ts, unit
+        if os.path.isdir(start):
+            for dirpath, dirnames, filenames in os.walk(start):
+                for f in filenames:
+                    fp = os.path.join(dirpath, f)
+                    if not os.path.islink(fp):
+                        ts += os.path.getsize(fp)
+        else:
+            ts = os.path.getsize(start)
+        if human:
+            while ts >= 1024:
+                ts /= 1024
+                unit += 1
+        return ts, unit
+    
     def result_list():
         print('ID:\tTime\t\tC L T B')
+        print('Size:\tC\tL\tT')
+        units = ['B', 'KB', 'MB', 'GB', 'TB', '']
         for i, (d, r) in enumerate(results.items()):
             print(
                 '{}:\t{}\t{} {} {} {}'.format(
@@ -44,6 +65,25 @@ if __name__ == '__main__':
                     'L' if r.log is not None else '-',
                     'T' if r.tarball is not None else '-',
                     'B' if r.board is not None else '-'
+                )
+            )
+            if r.checkpoint is not None:
+                cs, cu = get_size(r.checkpoint)
+            else:
+                cs, cu = 0, 0
+            if r.log is not None:
+                ls, lu = get_size(r.log)
+            else:
+                ls, lu = 0, 0
+            if r.tarball is not None:
+                ts, tu = get_size(r.tarball)
+            else:
+                ts, tu = 0, 0
+            print(
+                '\t{:.1f}{}\t{:.1f}{}\t{:.1f}{}'.format(
+                    cs, units[cu],
+                    ls, units[lu],
+                    ts, units[tu]
                 )
             )
     

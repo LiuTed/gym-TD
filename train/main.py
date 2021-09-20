@@ -107,7 +107,8 @@ def game_loop_vec(env, dummy_env, model, train_callback, loss_callback, writer, 
                 '0': prob[i, 0],
                 '1': prob[i, 1],
                 '2': prob[i, 2],
-                '3': prob[i, 3]
+                '3': prob[i, 3],
+                'NOP': prob[i, 4]
             }, __prob_index)
         __prob_index += 1
         actions = model.get_action(states)
