@@ -4,6 +4,7 @@ import re
 from collections import OrderedDict
 import subprocess
 import numpy as np
+import atexit
 
 class Result:
     checkpoint = None

@@ -1,10 +1,9 @@
 from gym_TD.utils import logger
+import numpy as np
 import time
 
 def SamplerPPO_train_single(ppo, state, action, next_state, reward, done, info, writer, title, config):
-    if (action != info['RealAction']).any():
-        reward -= 0.3
-    ppo.record_single(state, action, reward, done)
+    ppo.record_single(state, info['RealAction'], reward, done)
     if ppo.len_trajectory % config.horizon == 0:
         ppo.flush_single(next_state)
         logger.debug('P', 'SamplerPPO_train_single: flush one trajectory')
@@ -18,9 +17,7 @@ def SamplerPPO_train_single(ppo, state, action, next_state, reward, done, info, 
     return None
     
 def SamplerPPO_train(ppo, states, actions, next_states, rewards, dones, infos, writer, title, config):
-    for i, action in enumerate(actions):
-        if (action != infos[i]['RealAction']).any():
-            rewards[i] -= 0.3
+    actions = np.asarray([info['RealAction'] for info in infos])
     ppo.record(states, actions, rewards, dones)
     if ppo.len_trajectory % config.horizon == 0:
         ppo.flush(next_states)
@@ -64,7 +61,7 @@ def SamplerPPO_model(env, env_name, map_size, config):
         net = Net.UNet(
             env.observation_space.shape[0], 64,
             env.observation_space.shape[1], env.observation_space.shape[2],
-            4, 1
+            5, 1
         ).to(config.device)
         ppo = SamplerPPO(
             None, None, net,
@@ -74,7 +71,7 @@ def SamplerPPO_model(env, env_name, map_size, config):
             config
         )
     elif env_name.startswith("TD-atk"):
-        policy_shape = [env.action_space.shape[0], env.action_space.high+1]
+        policy_shape = [env.action_space.shape[0], 5]
         net = Net.FCN(
             env.observation_space.shape[0],
             env.observation_space.shape[1], env.observation_space.shape[2],

@@ -39,10 +39,10 @@ class TDAttack(TDGymBasic):
                 if np.all(cluster == config.enemy_types):
                     fail_code.append(0)
                     continue
-                if self._board.summon_cluster(cluster, i):
+                res, real = self._board.summon_cluster(cluster, i)
+                if res:
                     self.attacker_cd = config.attacker_action_interval
-                else:
-                    real_act[i] = config.enemy_types
+                real_act[i] = real
                 fail_code.append(self._board.fail_code)
         
         getattr(self, 'random_tower_lv{}'.format(self.difficulty))()

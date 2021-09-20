@@ -101,7 +101,7 @@ def game_loop_vec(env, dummy_env, model, train_callback, loss_callback, writer, 
         logger.debug('M', 'states: {}', states.shape)
         prob = model.get_prob(states)
         prob = torch.softmax(prob, -1)
-        prob = torch.mean(prob, 0).cpu().numpy()
+        prob = torch.mean(prob, 0).detach().cpu().numpy()
         for i in range(3):
             writer.add_scalars(title+'/ActionProb_{}'.format(i), {
                 '0': prob[i, 0],
@@ -382,8 +382,6 @@ if __name__ == "__main__":
     writer = SummaryWriter(args.log_dir)
 
     model, train_callback, loss_callback = _get_model(args, dummy_env)
-
-    writer.add_graph(model)
     
     # start training/testing
     if args.test:

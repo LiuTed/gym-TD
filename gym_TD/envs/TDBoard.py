@@ -1,4 +1,3 @@
-from random import sample
 import numpy as np
 
 from gym_TD.utils import logger
@@ -13,7 +12,21 @@ class TDBoard(object):
     The implementation of basic rule and states of TD game.
     '''
     def __init__(self, map_size, num_roads, np_random, cost_def, cost_atk, max_cost, base_LP):
+        '''
+        Create the game field
+        map_size: The length of edge of the field.
+        num_roads: The number of roads generated. num_roads must be one of {1, 2, 3}
+        np_random: A Numpy BitGenerator or None. Used to control the field generation.
+        cost_def: The initial costs that the defender has.
+        cost_atk: The initial costs that the attacker has.
+        max_cost: The upper limit of costs.
+        base_LP: The life point of base point.
+        '''
         self.map_size = map_size
+
+        if np_random is None:
+            from gym.utils import seeding
+            np_random, _ = seeding.np_random(None)
 
         self.map = np.zeros(shape=(7, map_size, map_size), dtype=np.int32)
         # is road, is road1, is road2, is road3, dist to end, where to go, how many towers nearby
@@ -89,6 +102,7 @@ class TDBoard(object):
         14: could build tower
         [15, 15+# tower lv): tower level is [0, # tower lv)
         [15+# tower lv, 15+# tower lv+# tower type): tower type is [0, # tower type)
+        [15+# tower lv+# tower type, 15+# tower lv+2 # tower type): tower of type could be built
         [a, a+# enemy type): lowest enemy LP of type [0, # enemy type)
         [a+# enemy type, a+2 # enemy type): highest enemy LP of type [0, # enemy type)
         [a+2 # enemy type, a+3 # enemy type): average enemy LP of type [0, # enemy type)
@@ -113,11 +127,14 @@ class TDBoard(object):
         
         tower_lv_base = 15
         tower_type_base = tower_lv_base + config.max_tower_lv + 1
+        tower_build_base = tower_type_base + config.tower_types
         for t in self.towers:
             s[tower_lv_base+t.lv, t.loc[0], t.loc[1]] = 1
             s[tower_type_base+t.type, t.loc[0], t.loc[1]] = 1
+        for t in range(config.tower_types):
+            s[tower_build_base + t] = 1 if self.cost_def >= config.tower_cost[t][0] else 0
         
-        enemy_channel_base = tower_type_base + config.tower_types
+        enemy_channel_base = tower_build_base + config.tower_types
         can_summon_base = enemy_channel_base + 4 * config.enemy_types
 
         s[enemy_channel_base: can_summon_base] = self.enemy_LP.reshape((4*config.enemy_types, self.map_size, self.map_size))
@@ -128,12 +145,40 @@ class TDBoard(object):
     
     @staticmethod
     def n_channels():
-        return 15 + config.tower_types + config.max_tower_lv + 1 + 5 * config.enemy_types
+        '''
+        Return how many channels there will be in the state tensor
+
+        >>> TDBoard.n_channels()
+        45
+        '''
+        return 15 + 2 * config.tower_types + config.max_tower_lv + 1 + 5 * config.enemy_types
     @property
     def state_shape(self):
+        '''
+        Return the shape of state tensor
+
+        >>> board = TDBoard(10, 2, None, 10, 10, 100, 5)
+        >>> board.state_shape
+        (45, 10, 10)
+        '''
         return (self.n_channels(), self.map_size, self.map_size)
     
     def is_valid_pos(self, pos):
+        '''
+        Check if the position is valid for this field
+
+        >>> board = TDBoard(10, 2, None, 10, 10, 100, 5)
+        >>> board.is_valid_pos([10, 2])
+        False
+        >>> board.is_valid_pos([-1, 3])
+        False
+        >>> board.is_valid_pos([5, 10])
+        False
+        >>> board.is_valid_pos([4, -1])
+        False
+        >>> board.is_valid_pos([2, 3])
+        True
+        '''
         return pos[0] >= 0 and pos[0] < self.map_size and pos[1] >= 0 and pos[1] < self.map_size
     
     def summon_enemy(self, t, start_id):
@@ -155,26 +200,28 @@ class TDBoard(object):
         start = self.start[start_id]
         lv = 1 if self.progress >= config.enemy_upgrade_at else 0
         logger.debug('B', 'summon_cluster: {}, {} ({},{})', types, start_id, start[0], start[1])
-        enemies = []
-        costs = []
+        tried = False
+        summoned = False
+        real_act = []
         for t in types:
             if t == config.enemy_types:
+                real_act.append(t)
                 continue
+            tried = True
             e = create_enemy(t, start, self.map[4, start[0], start[1]], lv)
-            costs.append(e.cost)
-            enemies.append(e)
-        if self.max_cost < sum(costs):
-            logger.verbose('B', 'Summon cluster {} failed due to cost shortage', types)
-            self.__fail_code = FC.IMPOSSIBLE_CLUSTER
-            return False
-        if self.cost_atk < sum(costs):
+            if self.cost_atk < e.cost:
+                real_act.append(config.enemy_types)
+            else:
+                self.cost_atk -= e.cost
+                self.enemies.append(e)
+                summoned = True
+                real_act.append(t)
+        if (not summoned) and tried:
             logger.verbose('B', 'Summon cluster {} failed due to cost shortage', types)
             self.__fail_code = FC.COST_SHORTAGE
-            return False
-        self.enemies += enemies
-        self.cost_atk -= sum(costs)
+            return False, real_act
         self.__fail_code = FC.SUCCESS
-        return True
+        return True, real_act
 
     def tower_build(self, t, loc):
         p = create_tower(t, loc)
@@ -321,6 +368,19 @@ class TDBoard(object):
         return reward
     
     def done(self):
+        '''
+        Check if the game has finished
+
+        >>> board = TDBoard(10, 2, None, 10, 10, 100, 5)
+        >>> board.done()
+        False
+        >>> board.base_LP = 0
+        >>> board.done()
+        True
+        >>> board.base_LP, board.steps = 5, 1200
+        >>> board.done()
+        True
+        '''
         return (self.base_LP is not None and self.base_LP <= 0) \
             or self.steps >= hyper_parameters.max_episode_steps
     
@@ -604,6 +664,93 @@ class TDBoard(object):
         return self.viewer.render(return_rgb_array=mode == "rgb_array")
     
     def close(self):
+        '''
+        Close the render viewer
+        '''
         if self.viewer:
             self.viewer.close()
             self.viewer = None
+
+if __name__ == '__main__':
+    rng = np.random.RandomState()
+    rng.seed(1024)
+    board = TDBoard(
+        10, 2, rng,
+        config.defender_init_cost,
+        config.attacker_init_cost,
+        config.max_cost,
+        config.base_LP
+    )
+
+    import doctest
+    doctest.testmod(verbose=True)
+
+    state = board.get_states()
+    
+    ground_truth = np.zeros(board.state_shape, dtype=np.float32)
+    road0 = [
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [1, 1, 0, 0, 0, 0, 0, 1, 1, 1],
+        [0, 1, 0, 0, 0, 0, 0, 1, 0, 0],
+        [0, 1, 1, 1, 1, 1, 1, 1, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    ]
+    road0 = np.asarray(road0, dtype=np.float32)
+    road1 = [
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [1, 1, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 1, 1, 1, 1, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 1, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 1, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 1, 0, 0, 0, 0, 0]
+    ]
+    road1 = np.asarray(road1, dtype=np.float32)
+    dist = [
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 1, 0, 0, 0, 0, 0, 11, 12, 13],
+        [0, 2, 0, 0, 0, 0, 0, 10, 0, 0],
+        [0, 3, 4, 5, 6, 7, 8, 9, 0, 0],
+        [0, 0, 0, 0, 7, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 8, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 9, 0, 0, 0, 0, 0]
+    ]
+    dist = np.asarray(dist, dtype=np.float32)
+    road = road0 + road1
+    road = np.where(road > 0, np.ones_like(road), np.zeros_like(road))
+    ground_truth[0] = road
+    ground_truth[1] = road0
+    ground_truth[2] = road1
+    ground_truth[4, 4, 0] = 1    
+    ground_truth[6, 4, 9] = 1
+    ground_truth[7, 9, 4] = 1
+    ground_truth[5] = 1
+    ground_truth[9] = dist / 14
+    ground_truth[11] = config.defender_init_cost / config.max_cost
+    ground_truth[12] = config.attacker_init_cost / config.max_cost
+    ground_truth[13] = 0
+    ground_truth[14] = 1 - road
+    ground_truth[21] = 1
+    for i in range(4):
+        ground_truth[41+i] = config.defender_init_cost / config.enemy_cost[i][0] / hyper_parameters.max_cluster_length
+    
+    assert np.all(state == ground_truth)
+    for i in range(4):
+        for j in range(2):
+            assert board.summon_enemy(i, j) == False
+    
+
+    # board.render('human')
+    # input()
+    print('passed')
