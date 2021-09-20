@@ -75,9 +75,11 @@ __episode_rewards = None
 __episode_length = None
 __last_state = None
 __allow_next_move = None
+__prob_index = 0
 def game_loop_vec(env, dummy_env, model, train_callback, loss_callback, writer, title, config):
     global __episode_rewards, __episode_length
     global __last_state, __allow_next_move
+    global __prob_index
 
     if __episode_rewards is None:
         __episode_rewards = [[] for _ in range(len(env.env_fns))]
@@ -106,7 +108,8 @@ def game_loop_vec(env, dummy_env, model, train_callback, loss_callback, writer, 
                 '1': prob[i, 1],
                 '2': prob[i, 2],
                 '3': prob[i, 3]
-            })
+            }, __prob_index)
+        __prob_index += 1
         actions = model.get_action(states)
         logger.debug('M', 'actions: {}', actions)
 

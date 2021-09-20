@@ -1,4 +1,5 @@
 cartpole
 ckpt*
+Result*
 *.tar.gz
 log*

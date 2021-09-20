@@ -34,15 +34,16 @@ if __name__ == '__main__':
                 results[res.group(1)] = val
     
     def result_list():
+        print('ID:\tTime\t\tC L T B')
         for i, (d, r) in enumerate(results.items()):
             print(
-                '{}: {} {} {} {} {}'.format(
+                '{}:\t{}\t{} {} {} {}'.format(
                     i,
                     d,
-                    'T' if r.checkpoint is not None else 'F',
-                    'T' if r.log is not None else 'F',
-                    'T' if r.tarball is not None else 'F',
-                    'R' if r.board is not None else '-'
+                    'C' if r.checkpoint is not None else '-',
+                    'L' if r.log is not None else '-',
+                    'T' if r.tarball is not None else '-',
+                    'B' if r.board is not None else '-'
                 )
             )
     
@@ -89,19 +90,20 @@ if __name__ == '__main__':
         if res is not None:
             actions = 0
             dkeys = []
-            for sid in res.groups():
-                if sid is None:
-                    continue
-                if sid == ' checkpoint':
+            for m in re.finditer('checkpoint|log|tarball', cmd):
+                act = m.group(0)
+                if act == 'checkpoint':
                     actions |= 1
                     continue
-                if sid == ' log':
+                if act == 'log':
                     actions |= 2
                     continue
-                if sid == ' tarball':
+                if act == 'tarball':
                     actions |= 4
                     continue
-                key, val = get_key_val(sid, keys)
+            for m in re.finditer(' [0-9]+| [0-9]{6}-[0-9]{6}', cmd):
+                sid = m.group(0)
+                key, val = get_key_val(sid.strip(), keys)
                 if key is None:
                     continue
                 dkeys.append(key)
@@ -141,7 +143,9 @@ if __name__ == '__main__':
                         print('Deleting', val.tarball)
                         os.remove(val.tarball)
                         val.tarball = None
-                    if val.checkpoint or val.log or val.tarball:
+                    if val.checkpoint is not None\
+                         or val.log is not None\
+                         or val.tarball is not None:
                         results[key] = val
                     else:
                         results.pop(key)
@@ -161,8 +165,8 @@ if __name__ == '__main__':
                 print('log of {} does not exists'.format(key))
                 continue
             subp = subprocess.Popen(
-                'tensorboard --logdir={} --bind_all'.format(val.log),
-                shell = True,
+                ['tensorboard', '--logdir='+val.log, '--bind_all'],
+                shell = False,
                 stdout = subprocess.DEVNULL
             )
             val.board = subp
