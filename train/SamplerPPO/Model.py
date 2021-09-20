@@ -111,12 +111,12 @@ class SamplerPPO(object):
         torch.save(d, ckpt+'/model.pkl')
         logger.verbose('P', 'SamplerPPO: saved')
 
-    def get_action(self, state, determinated=False):
+    def get_action(self, state, determined=False):
         with torch.no_grad():
             prob = self.get_prob(state)
             batch_shape = prob.shape[:-1]
 
-            if not determinated:
+            if not determined:
                 dist = tdist.categorical.Categorical(logits=prob)
 
                 s = dist.sample([self.len_sample])

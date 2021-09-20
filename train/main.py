@@ -97,6 +97,16 @@ def game_loop_vec(env, dummy_env, model, train_callback, loss_callback, writer, 
 
     while not all(have_dones):
         logger.debug('M', 'states: {}', states.shape)
+        prob = model.get_prob(states)
+        prob = torch.softmax(prob, -1)
+        prob = torch.mean(prob, 0).cpu().numpy()
+        for i in range(3):
+            writer.add_scalars(title+'/ActionProb_{}'.format(i), {
+                '0': prob[i, 0],
+                '1': prob[i, 1],
+                '2': prob[i, 2],
+                '3': prob[i, 3]
+            })
         actions = model.get_action(states)
         logger.debug('M', 'actions: {}', actions)
 
@@ -234,6 +244,8 @@ def _get_args():
     env_args.add_argument('-E', '--env', default='TD-def-v0', type=str, help='The name of environment. Default: TD-def-v0')
     env_args.add_argument('--env-config', type=str, default=None, help='The config file of the environment.')
     env_args.add_argument('-S', '--map-size', default=20, type=int, help='Map size of the environment. Default: 20')
+    env_args.add_argument('-e', '--seed', type=int, default=None, help='Seed of environment')
+    env_args.add_argument('-o', '--difficulty', default=1, type=int, help='Opponent AI level. Default: 1')
 
     log_args = parser.add_argument_group('Logger Arguments')
     log_args.add_argument('-d', '--log-dir', default='./log', type=str, help='The directory of log. Default: ./log')
@@ -242,6 +254,7 @@ def _get_args():
     verb_lv_args = log_args.add_mutually_exclusive_group()
     verb_lv_args.add_argument('-V', '--verbose', action='store_true', help='Output more information.')
     verb_lv_args.add_argument('-D', '--debug-output', action='store_true', help='Output debug information.')
+    verb_lv_args.add_argument('-w', '--disable-warning', action='store_true', help='Do not output warnings.')
     verb_lv_args.add_argument('-q', '--quiet', action='store_true', help='Only output errors.')
 
     args = parser.parse_args()
@@ -257,6 +270,11 @@ def _set_output(args):
     else:
         for r in args.regions:
             logger.add_region(r)
+    
+    def disable_warning():
+        import warnings
+        warnings.simplefilter('ignore')
+
 
     from gym import logger as gym_logger
     if args.debug_output:
@@ -268,10 +286,13 @@ def _set_output(args):
     elif args.quiet:
         logger.set_level(logger.ERROR)
         gym_logger.set_level(gym_logger.ERROR)
-        import warnings
-        warnings.simplefilter('ignore')
+        disable_warning()
+    elif args.disable_warning:
+        logger.set_level(logger.INFO)
+        disable_warning()
     else:
         logger.set_level(logger.INFO)
+
     
     try:
         logger.set_writer(tqdm.tqdm.write)
@@ -294,7 +315,13 @@ def _get_environment(args):
     from gym.vector.async_vector_env import AsyncVectorEnv
     def make_fn(i):
         def closure(_i = i):
-            env = gym.make(args.env, map_size = args.map_size)
+            env = gym.make(
+                args.env,
+                map_size = args.map_size,
+                difficulty = args.difficulty,
+                seed = args.seed,
+                fixed_seed = (args.seed is not None)
+            )
             env = Monitor(env, directory=args.log_dir + '/' + str(_i), force=True, video_callable=False if args.no_render else None)
             return env
         return closure
@@ -351,9 +378,11 @@ if __name__ == "__main__":
     writer = SummaryWriter(args.log_dir)
 
     model, train_callback, loss_callback = _get_model(args, dummy_env)
+
+    writer.add_graph(model)
     
     # start training/testing
     if args.test:
-        test_loop(env, model, loss_callback, writer, config)
+        test_loop(dummy_env, model, loss_callback, writer, config)
     else:
         train_loop(env, dummy_env, model, args.checkpoint, train_callback, loss_callback, writer, config)

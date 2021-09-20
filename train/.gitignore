@@ -1,1 +1,4 @@
 cartpole
+ckpt*
+*.tar.gz
+log*
