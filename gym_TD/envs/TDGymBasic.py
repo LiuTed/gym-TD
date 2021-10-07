@@ -55,8 +55,27 @@ class TDGymBasic(gym.Env):
         return states
     
     def test(self):
-        self._board.summon_cluster([0, 1, 2], 0)
-        self._board.tower_build([self.map_size//2, self.map_size//2])
+        from gym_TD.envs.TDElements import create_enemy, create_tower
+        start = self._board.start[0]
+        for t in range(config.enemy_types):
+            for r in [0.1, 0.5, 1]:
+                e = create_enemy(t, start, self._board.map[4, start[0], start[1]], 0)
+                e.LP = int(e.maxLP * r)
+                self._board.enemies.append(e)
+        self._board.cost_atk = 10
+        self._board.cost_def = 10
+        for t in range(config.tower_types):
+            self._board.cost_def += config.tower_cost[t][0]
+            succ = False
+            for i in range(self._board.map_size):
+                for j in range(self._board.map_size):
+                    if self._board.map[6, i, j] == 0:
+                        self._board.tower_build(t, [i, j])
+                        succ = True
+                        break
+                if succ:
+                    break
+                        
         self._board.step()
     
     def random_enemy_lv0(self):

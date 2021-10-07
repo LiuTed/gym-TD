@@ -14,11 +14,7 @@ def play_demo():
     env.render()
     env.test()
     env.render()
-    done = False
-    while not done:
-        sleep(.3)
-        _, _, done, _ = env.empty_step()
-        env.render()
+    input('press any key to continue')
 
 def play_atk():
     env = gym.make('TD-atk-middle-v0')
@@ -53,13 +49,13 @@ def play_def():
     win = []
     for i in range(300):
         env.reset()
-        # env.render()
+        env.render()
         done = False
         tr = 0.
         s = 0
         while not done:
             _, r, done, _ = env.step(env.action_space.sample())
-            # env.render()
+            env.render()
             tr += r
             s += 1
         rs.append(tr)
@@ -73,7 +69,6 @@ def play_def():
 def play_2p():
     seed = random.randint(0, 0xffffff)
     print(seed)
-    seed = 5807770
     env = gym.make('TD-2p-middle-v0')
     env.seed(seed)
     env.reset()
@@ -115,10 +110,17 @@ def single_enemy(loop, i):
 def test():
     print(getConfig())
     print(getHyperParameters())
-    for i in [0, 1, 2, 3]:
-        single_enemy(300, i)
-    play_atk()
-    
+    env = gym.make('TD-2p-middle-v0')
+    seed = 5014000
+    while True:
+        # seed = random.randint(0, 0xffffff)
+        seed = 5014290
+        # seed += 1
+        print(seed)
+        env.seed(seed)
+        env.reset()
+        env.render()
+        input('.')
 
 
 if __name__ == "__main__":
@@ -132,8 +134,13 @@ if __name__ == "__main__":
 
     if args.debug:
         logger.set_level(logger.DEBUG)
+        gym_TD.logger.set_level(gym_TD.logger.DEBUG)
+        gym_TD.logger.enable_all_region()
+        gym_TD.logger.remove_region('R')
+        # gym_TD.logger.remove_region('B')
     else:
         logger.set_level(logger.INFO)
+        
     
     # paramConfig(
     #     base_LP=3,

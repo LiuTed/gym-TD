@@ -2,9 +2,9 @@ from setuptools import setup
 
 setup(
     name="gym_TD",
-    version="0.5.1",
+    version="0.5.2",
     url="https://github.com/liuted/gym-TD",
     author="Taide Liu",
-    packages=["gym_TD", "gym_TD.envs", "gym_TD.utils"],
-    install_requires = ["gym", "numpy>=1.9.0"]
+    packages=["gym_TD", "gym_TD.envs", "gym_TD.utils", "gym_toys", "gym_toys.envs"],
+    install_requires = ["gym", "numpy", "scipy"]
 )

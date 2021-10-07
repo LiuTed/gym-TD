@@ -8,54 +8,66 @@ gym-TD is a simplified Tower Defense game (TD game). Your goal is to build tower
 ### Board
 Board is where this game happens. It contains blocks of shape `(length, length)`. The elements is described as follow:
 - Bars at the top: Cost bar.
-    - Orange bar: The cost that the attacker has.
-    - Blue bar: The cost that the defender has.
+    - Red bar on the left: The cost that the attacker has.
+    - Blue bar on the right: The cost that the defender has.
     - Note: Each time the attacker summons a enemy or the defender build/upgrade a tower, some costs will be consumed.
+- Little blocks and lines below the bar: legends.
+    - Four blocks on the left most: Enemy of type 0-3 respectively
+    - Four lines on the middle: from top to bottom:
+        - Number of enemies at each position
+        - Average life points of enemies at each position
+        - Maximum life points of enemies at each position
+        - Minimum life points of enemies at each position
+    - Four blocks on the right side: Defense tower of type 0-3 respectively
 - White square: A empty place where towers could be built on.
-- Black square: A part of a path where the enemies will walk.
+- Gray square: The place where towers could not be built on.
+- Black square: A part of a path where the enemies will pass. Tower could not be built here either.
 - Red square: The start point where the enemies will be summoned.
 - Blue square: The base point of defender.
     - Light blue bar: The LP bar of base point.
-- Lake blue square: A defense tower.
-    - Green bar on the left side: The level of ATK of this tower.
-    - Green bar on the right side: The level of attack range of this tower.
-- Small blocks on the road: Enemies.
-    - Red block: A enemy that has balanced speed and life point. It will always be at the left top of a road square. (EnemyBalance)
-    - Green block: A enemy that has the lowest speed and highest life point. It will always be at the right top of a road square. (EnemyStrong)
-    - Blue block: A enemy that has the highest speed and lowest life point. It will always be at the bottom center of a road square. (EnemyFast)
-    - Green bars on the bottom of enemies: The life bar of the enemies.
-    - **Note**: Because the attacker could only summon one enemy of each type at a single step, there will not be 2+ enemies of the same type at the same location.
+- Green bar over the towers: Tower level.
 
 ### Defender
 Defender is the player in most other TD games. Your goal is to build and upgrade your towers, which could automatically attack the enemies, to protect your base point.
 - Observation space:
-    - An NumPy array of shape (length, length, 8+`enemy_overlay_limit`*6)
+    - An NumPy array of shape (nchannels, length, length)
     - Channels in Map:
-      - 0: If this block is a road. (0 for False and 1 for True)
-      - 1: If this block is a start point.
-      - 2: If this block is a base point.
-      - 3: The costs that the defender has. (Normalized to 1)
-      - 4: The costs that the attacker has. (Normalized to 1)
-      - 5: If this block has a tower.
-      - 6: The ATK level of this tower: One of 0, 1, 2
-      - 7: The Range level of this tower: One of 0, 1, 2
-      - [8, 8+`enemy_overlay_limit`): The LP (life point) ratio of EnemyBalance in this block. The values will be filled in sequence. For example, if there are `n` enemies, the channels [8, 8+`n`) will be filled. Besides, the enemy closer to the base point will be filled in channels with smaller index.
-      - [8+`enemy_overlay_limit`, 8+`enemy_overlay_limit`*2): The LP ratio of EnemyStrong in this block.
-      - [8+`enemy_overlay_limit`*2, 8+`enemy_overlay_limit`*3): The LP ratio of EnemyFast in this block.
-      - [8+`enemy_overlay_limit`*3, 8+`enemy_overlay_limit`*4): The distance that EnemyBalance has passed in this block.
-      - [8+`enemy_overlay_limit`*4, 8+`enemy_overlay_limit`*5): The distance that EnemyStrong has passed in this block.
-      - [8+`enemy_overlay_limit`*5, 8+`enemy_overlay_limit`*6): The distance that EnemyFast has passed in this block.
-    - `enemy_overlay_limit`: Allows how many enemies at the same block. Default is 20. You can change this value in [TDParam.py:HyperParameters:__init__()](gym_TD/envs/TDParam.py)
-
+        - 0: is road
+        - 1: is road 1
+        - 2: is road 2
+        - 3: is road 3
+        - 4: is end point
+        - 5: LP ratio of end point
+        - 6: is start point 1
+        - 7: is start point 2
+        - 8: is start point 3
+        - 9: distance to end point
+        - 10: is tower
+        - 11: defender cost
+        - 12: attacker cost
+        - 13: progress of the game
+        - 14: could build tower
+        - [15, 15+# tower lv): tower level is [0, # tower lv)
+        - [15+# tower lv, 15+# tower lv+# tower type): tower type is [0, # tower type)
+        - [15+# tower lv+# tower type, 15+# tower lv+2 # tower type): tower of type could be built
+        - [a, a+# enemy type): lowest enemy LP of type [0, # enemy type)
+        - [a+# enemy type, a+2 # enemy type): highest enemy LP of type [0, # enemy type)
+        - [a+2 # enemy type, a+3 # enemy type): average enemy LP of type [0, # enemy type)
+        - [a+3 # enemy type, a+4 # enemy type): number of enemies of type [0, # enemy type)
+        - [a+4 # enemy type, a+5 # enemy type): how many enemies could be summoned of type [0, # enemy type)
+    - Note: The '# tower lv', '# tower type', '# enemy type', are all specified in configs
 
 - Action space:
-    - An NumPy array of shape (length, length, 4) and dtype=np.int32
-    - Channels description:
-        - 0: Build: Whether to build a tower at this place. (1 for True)
-        - 1: ATKUp: Whether to upgrade the ATK of the tower at this place.
-        - 2: RangeUp: Whether to upgrade the attack range of the tower at this place.
-        - 3: Destruct: Whether to destruct the tower at this place. Destruction will return some costs spent on this tower.
-    - The four actions are processed in order (Process Build, ATKUp, RangeUp, Destruct in order in one block, and then these four actions in another block), which means you could build a tower and upgrade it and then destruct it in a single action, but you could not upgrade the same property twice in a single action.
+    - `hyper_parameters:allow_multiple_actions==True`:
+      - Box(low=0, high=1, shape=(# tower types+2, length, length), dtype=np.int64)
+      - Channels description:
+          - [0, #tower types): Build: Whether to build a tower of that type at this place. (1 for True)
+          - #tower types: LvUp: Whether to upgrade the tower at this place.
+          - #tower types+1: Destruct: Whether to destruct the tower at this place. Destruction will return some costs spent on this tower.
+      - These actions are processed in order (Process Build, LvUp, Destruct in order in one block, and then these actions in another block), which means you could build a tower and upgrade it and then destruct it in a single action, but you could not do the same thing twice in a single action.
+    - `hyper_parameters:allow_multiple_actions==False`:
+      - Discrete(length * length * (# tower types+2) + 1)
+      - The one hot index of the tensor described above, with the last action as doing nothing.
 
     **Note**: The illegal actions will be ignored.
 
@@ -65,8 +77,8 @@ Your goal is to summon the enemies with some strategy so that as many enemies (c
     Same as defender.
 
 - Action space:
-    A list of len = 3, the element of which should be either 0 or 1.
-    Each represents whether summon this type of creeper. (1 for True)
+    - Box(low=0, high=# enemy types, shape=(max num of roads, max cluster length), dtype=np.int64)
+    - The types of enemy summoned in the cluster at each road. # enemy types means do not summon.
 
 ### Multi-player
 You could control both the defender and attacker.
@@ -89,7 +101,7 @@ You could control both the defender and attacker.
 You could config lots of parameters of this game with the function `paramConfig(**kwargs)` to customize your environment. For example, if you want to set the variable `max_cost=100`, all you need is to simply execute `paramConfig(max_cost=100)` before making the environment. You should config parameters before making an environment. You could read [gym_TD/envs/README.md](gym_TD/envs/README.md) for detailed descriptions.
 
 ### End condition
-This game will run continuously until reaching 200 steps, or `base_LP` enemies have been leaked (`base_LP=None` means do not end due to leakage). Although you could run even after 200 steps without error, you are not supposed to do so.
+This game will run continuously until reaching 1200 steps, or `base_LP` enemies have been leaked (`base_LP=None` means do not end due to leakage). Although you could run even after 1200 steps without error, you are not supposed to do so.
 
 ### Versions
 - TD-def-small-v0: Control the defender. Map size = (10, 10)
@@ -130,3 +142,18 @@ You could also use `python demo.py -[adm]` to see a random game. (Use `python de
 
 ## Training
 You could use gym-TD just like use other OpenAI Gym environments like cartpole. You could go [OpenAI Gym](https://github.com/openai/gym) for example codes and documents.
+
+## Toys
+`gym_toys` contains several environments that is designed to test some specific abilities of machine learning agents. Toys requires gym, numpy and scipy.
+
+- `DistributionLearning-v0`:
+
+    Given a distribution Q, the goal is to generate a new distribution P, or a sample from the distribution P, so that the KL divergence D_KL(P||Q) is as large as possible.
+
+    This environment is designed to test the ability of learning the combination of multiple actions, and the ability of learning from samples.
+
+- `DiskRaising-v0`:
+
+    The goal is to raise a disk that is slowly falling on a rod to the top of that rod. Each time taking action will cost some budget, and the more budget that action costs, the more efficient that action is, thus learning to wait is important.
+
+    This environment is designed to test the ability of learning to wait and the ability of exploring actions with restrictions.

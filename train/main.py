@@ -99,6 +99,7 @@ def game_loop_vec(env, dummy_env, model, train_callback, loss_callback, writer, 
 
     while not all(have_dones):
         logger.debug('M', 'states: {}', states.shape)
+        actions = model.get_action(states)
         prob = model.get_prob(states)
         prob = torch.softmax(prob, -1)
         prob = torch.mean(prob, 0).detach().cpu().numpy()
@@ -110,8 +111,20 @@ def game_loop_vec(env, dummy_env, model, train_callback, loss_callback, writer, 
                 '3': prob[i, 3],
                 'NOP': prob[i, 4]
             }, __prob_index)
+            cnt = np.zeros([5], dtype=np.float32)
+            for j in range(len(env.env_fns)):
+                for k in range(actions.shape[-1]):
+                    cnt[actions[j, i, k]] += 1
+            cnt /= np.sum(cnt)
+            writer.add_scalars(title+'/ActionFreq_{}'.format(i), {
+                '0': cnt[0],
+                '1': cnt[1],
+                '2': cnt[2],
+                '3': cnt[3],
+                'NOP': cnt[4]
+            }, __prob_index)
+
         __prob_index += 1
-        actions = model.get_action(states)
         logger.debug('M', 'actions: {}', actions)
 
         for i in range(len(env.env_fns)):
