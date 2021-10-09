@@ -47,8 +47,8 @@ class DiskRaisingEnv(gym.Env):
         Episode length is greater than 1000.
 
         Solved Requirements:
-            When the average return is greater than 0.93
-            (reach top within 70 steps) over 100 consecutive trials.
+            When the average return is greater than 0.8
+            (reach top within 200 steps) over 100 consecutive trials.
     
     Note:
         Although it is really easy to write an agent to solve this
