@@ -297,8 +297,9 @@ class SamplerPPO(object):
                         -1
                     )
                 )
+                log_prob_loss = torch.mean(torch.square(log_prob))
 
-                loss = - surr + vf * vf_coeff - mean_prob_ent * ent_coeff
+                loss = - surr + vf * vf_coeff - mean_prob_ent * ent_coeff + 0.01 * log_prob_loss
                 
                 if torch.isinf(loss).item() or torch.isnan(loss).item():
                     logger.error('P', 'Loss error {} ({} {} {} {})', loss.item(), surr.item(), vf.item(), entropy.item(), mean_prob_ent.item())

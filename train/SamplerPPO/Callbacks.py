@@ -3,7 +3,8 @@ import numpy as np
 import time
 
 def SamplerPPO_train_single(ppo, state, action, next_state, reward, done, info, writer, title, config):
-    ppo.record_single(state, info['RealAction'], reward, done)
+    # ppo.record_single(state, info['RealAction'], reward, done)
+    ppo.record_single(state, action, reward, done)
     if ppo.len_trajectory % config.horizon == 0:
         ppo.flush_single(next_state)
         logger.debug('P', 'SamplerPPO_train_single: flush one trajectory')
@@ -17,7 +18,7 @@ def SamplerPPO_train_single(ppo, state, action, next_state, reward, done, info, 
     return None
     
 def SamplerPPO_train(ppo, states, actions, next_states, rewards, dones, infos, writer, title, config):
-    actions = np.asarray([info['RealAction'] for info in infos])
+    # actions = np.asarray([info['RealAction'] for info in infos])
     ppo.record(states, actions, rewards, dones)
     if ppo.len_trajectory % config.horizon == 0:
         ppo.flush(next_states)
@@ -72,13 +73,18 @@ def SamplerPPO_model(env, env_name, map_size, config):
         )
     elif env_name.startswith("TD-atk"):
         policy_shape = [env.action_space.shape[0], 5]
-        net = Net.FCN(
+        a = Net.FCN(
             env.observation_space.shape[0],
             env.observation_space.shape[1], env.observation_space.shape[2],
-            policy_shape, [1], prob_channel=-1
+            policy_shape, None, prob_channel=-1
+        ).to(config.device)
+        c = Net.FCN(
+            env.observation_space.shape[0],
+            env.observation_space.shape[1], env.observation_space.shape[2],
+            None, [1]
         ).to(config.device)
         ppo = SamplerPPO(
-            None, None, net,
+            a, c, None,
             env.observation_space.shape,
             policy_shape,
             env.action_space.shape[1],

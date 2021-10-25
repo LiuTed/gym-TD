@@ -69,6 +69,13 @@ class DiskRaisingEnv(gym.Env):
         self.seed()
         self.reset()
     
+    @property
+    def state(self):
+        obsv = np.empty((2,), np.float32)
+        obsv[0] = self.pos / 100
+        obsv[1] = self.cost / 20
+        return obsv
+    
     def step(self, action):
         err_msg = "%r (%s) invalid" % (action, type(action))
         assert self.action_space.contains(action), err_msg
@@ -94,13 +101,9 @@ class DiskRaisingEnv(gym.Env):
 
         self.cost += 1
 
-        obsv = np.empty((2,), np.float32)
-        obsv[0] = self.pos / 100
-        obsv[1] = self.cost / 20
-
         self.nstep += 1
 
-        return obsv, reward, (done or self.nstep>=1000), {'RealAct': action}
+        return self.state, reward, (done or self.nstep>=1000), {'RealAct': action}
     
     def reset(self):
         self.cost = 0
@@ -109,10 +112,7 @@ class DiskRaisingEnv(gym.Env):
         if self.viewer:
             self.viewer.close()
             self.viewer = None
-        obsv = np.empty((2,), np.float32)
-        obsv[0] = self.pos / 100
-        obsv[1] = self.cost / 20
-        return obsv
+        return self.state
     
     def seed(self, seed = None):
         self.np_random, seed = seeding.np_random(seed)

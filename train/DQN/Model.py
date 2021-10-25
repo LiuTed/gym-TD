@@ -27,6 +27,10 @@ class DQN(object):
         self.config = config
 
         self.step = 0
+    
+    def get_value(self, state):
+        with torch.no_grad():
+            return self.policy(state.to(self.config.device)).cpu()
 
     def get_action(self, state, training=True):
         r = random.random()
@@ -34,7 +38,7 @@ class DQN(object):
             return torch.tensor(np.random.randint(0, self.num_act, [1, ]))
         else:
             with torch.no_grad():
-                return self.policy(state.to(self.config.device)).max(1)[1].to('cpu')
+                return self.policy(state.to(self.config.device)).max(1)[1].cpu()
     
     def push(self, val):
         '''
@@ -53,7 +57,7 @@ class DQN(object):
         batch = self.memory.sample(self.config.batch_size)
 
         states = torch.cat([v[0] for v in batch], 0).to(device=self.config.device)
-        next_states = torch.cat([v[2] for v in batch if v[2] is not None], 0).to(device=Param.device)
+        next_states = torch.cat([v[2] for v in batch if v[2] is not None], 0).to(device=self.config.device)
         if next_states.shape[0] == 0:
             print('!')
             return
