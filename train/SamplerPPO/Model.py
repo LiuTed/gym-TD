@@ -132,9 +132,9 @@ class SamplerPPO(object):
                     s = s.unsqueeze(-1)
                     if self.len_sample > 1:
                         shape = s.shape
-                        logger.warn('P',
-                            'SamplerPPO: terminated action with length > 1 may generate result unexpectedly'
-                        )
+                        # logger.warn('P',
+                        #     'SamplerPPO: terminated action with length > 1 may generate result unexpectedly'
+                        # )
                         s = s.expand(*shape[:-1], self.len_sample)
 
             return s.cpu().numpy()
@@ -250,8 +250,15 @@ class SamplerPPO(object):
 
                 s = torch.tensor(states[slice], device=self.__config.device)
                 a = torch.tensor(actions[slice], dtype=torch.int64, device=self.__config.device)
+                # a_soft = torch.empty([len(slice), *self.__actions.shape[2:-1], 4], dtype=torch.int64)
+                
+                # for i in range(4):
+                #     a_soft[:,i] = i
+
                 if self.reduce_dim:
                     a = a.unsqueeze(-1)
+                # else:
+                #     a = torch.cat([a, a_soft.to(self.__config.device)], -1)
                 adv = torch.tensor(advs[slice], device=self.__config.device)
                 ret = torch.tensor(returns[slice], device=self.__config.device)
                 log_prob_old = torch.tensor(logp[slice], device=self.__config.device)
@@ -297,9 +304,9 @@ class SamplerPPO(object):
                         -1
                     )
                 )
-                log_prob_loss = torch.mean(torch.square(log_prob))
+                # log_prob_loss = torch.mean(torch.square(log_prob))
 
-                loss = - surr + vf * vf_coeff - mean_prob_ent * ent_coeff + 0.01 * log_prob_loss
+                loss = - surr + vf * vf_coeff - mean_prob_ent * ent_coeff# + 0.01 * log_prob_loss
                 
                 if torch.isinf(loss).item() or torch.isnan(loss).item():
                     logger.error('P', 'Loss error {} ({} {} {} {})', loss.item(), surr.item(), vf.item(), entropy.item(), mean_prob_ent.item())

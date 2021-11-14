@@ -18,15 +18,16 @@ class DiskRaisingEnv(gym.Env):
         0       Distance from disk to the       0       1
                 bottom of the rod
         1       How many budget do you have.    0       1
-                Increase 0.05 for each timestep
+                Increase 1/40 for each timestep
     
     Actions:
-        Type: Discrete(4)
+        Type: Discrete(5)
         Num     Action                  Cost    Raising Distance
         0       Doing nothing           0       0
-        1       Slightly pushing        0.05    0.01
-        2       Pushing                 0.15    0.04
-        3       Heavily pushing         0.5     0.2
+        1       Slightly pushing        1/40    0.01
+        2       Pushing                 3/40    0.04
+        3       Heavily pushing         10/40   0.2
+        4       Extremely pushing       30/40   0.8
 
         If the budget is not enough to use the input action, the action
         will be changed to Doing nothing (0). The actually used action
@@ -47,8 +48,8 @@ class DiskRaisingEnv(gym.Env):
         Episode length is greater than 1000.
 
         Solved Requirements:
-            When the average return is greater than 0.8
-            (reach top within 200 steps) over 100 consecutive trials.
+            When the average return is greater than 0.9
+            (reach top within 100 steps) over 100 consecutive trials.
     
     Note:
         Although it is really easy to write an agent to solve this
@@ -61,10 +62,13 @@ class DiskRaisingEnv(gym.Env):
         "render.modes": ['human', 'rgb_array'],
         'video.frames_per_second': 24
     }
+    max_cost = 40
+    need = [0, 1, 3, 10, 30]
+    gain = [0, 1, 4, 20, 80]
     def __init__(self) -> None:
         super().__init__()
         self.observation_space = spaces.Box(low=0., high=1., shape=(2,), dtype=np.float32)
-        self.action_space = spaces.Discrete(4)
+        self.action_space = spaces.Discrete(len(self.need))
         self.viewer = None
         self.seed()
         self.reset()
@@ -73,21 +77,18 @@ class DiskRaisingEnv(gym.Env):
     def state(self):
         obsv = np.empty((2,), np.float32)
         obsv[0] = self.pos / 100
-        obsv[1] = self.cost / 20
+        obsv[1] = self.cost / self.max_cost
         return obsv
     
     def step(self, action):
         err_msg = "%r (%s) invalid" % (action, type(action))
         assert self.action_space.contains(action), err_msg
 
-        need = [0, 1, 3, 10]
-        gain = [0, 1, 4, 20]
-
-        if self.cost < need[action]:
+        if self.cost < self.need[action]:
             action = 0
 
-        self.cost -= need[action]
-        self.pos += gain[action] - 1
+        self.cost -= self.need[action]
+        self.pos += self.gain[action] - 1
 
         if self.pos <= 0:
             reward = -1
@@ -99,7 +100,7 @@ class DiskRaisingEnv(gym.Env):
             reward = -0.001
             done = False
 
-        self.cost += 1
+        self.cost = min(self.cost+1, self.max_cost)
 
         self.nstep += 1
 
@@ -130,6 +131,13 @@ class DiskRaisingEnv(gym.Env):
             ])
             pole.set_color(0.8, 0.2, 0.2)
             self.viewer.add_geom(pole)
+            for n in self.need:
+                mark = rendering.Line(
+                    (width*0.85, height*n/self.max_cost),
+                    (width, height*n/self.max_cost)
+                )
+                mark.set_color(1, 0, 0)
+                self.viewer.add_geom(mark)
         
         self.viewer.draw_polygon(
             v=[
@@ -140,8 +148,8 @@ class DiskRaisingEnv(gym.Env):
         )
         self.viewer.draw_polygon(
             v=[
-                (width*0.9, 0), (width*0.9, height*self.cost/20),
-                (width, height*self.cost/20), (width, 0)
+                (width*0.9, 0), (width*0.9, height*self.cost/self.max_cost),
+                (width, height*self.cost/self.max_cost), (width, 0)
             ],
             color=(0, 0.1, 0.8)
         )

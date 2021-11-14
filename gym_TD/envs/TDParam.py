@@ -107,7 +107,7 @@ class HyperParameters(object):
         super(HyperParameters, self).__setattr__('max_episode_steps', 1200)
         super(HyperParameters, self).__setattr__('video_frames_per_second', 50)
         super(HyperParameters, self).__setattr__('allow_multiple_actions', False)
-        super(HyperParameters, self).__setattr__('max_cluster_length', 8)
+        super(HyperParameters, self).__setattr__('max_cluster_length', 1)
         super(HyperParameters, self).__setattr__('max_num_of_roads', 3)
     def __setattr__(self, name: str, value) -> None:
         raise RuntimeError('You are not supposed to modify hyper parameters during runtime.')

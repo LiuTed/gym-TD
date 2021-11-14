@@ -24,13 +24,17 @@ def game_loop(env, model, train_callback, loss_callback, writer, title, config):
     rewards = []
     actions = []
     real_actions = []
+    wait_action = None
     losses = []
     win = None
     allow_next_move = True
 
     while not done:
         if allow_next_move:
-            action = model.get_action(state)[0]
+            if wait_action is None:
+                action = model.get_action(state)[0]
+            else:
+                action = wait_action
         else:
             action = env.empty_action()
         next_state, r, done, info = env.step(action)
@@ -52,6 +56,18 @@ def game_loop(env, model, train_callback, loss_callback, writer, title, config):
         if allow_next_move:
             actions.append(action)
             real_actions.append(info['RealAction'])
+            if np.isscalar(action):
+                if action != info['RealAction']:
+                    wait_action = action
+                else:
+                    wait_action = None
+            else:
+                mask = (action != info['RealAction'])
+                if np.any(mask):
+                    wait_action = np.where(mask, action, env.empty_action())
+                else:
+                    wait_action = None
+
         step += 1
         allow_next_move = info['AllowNextMove']
     
@@ -75,16 +91,19 @@ __episode_rewards = None
 __episode_length = None
 __last_state = None
 __allow_next_move = None
+__wait_actions = None
 __prob_index = 0
 def game_loop_vec(env, dummy_env, model, train_callback, loss_callback, writer, title, config):
     global __episode_rewards, __episode_length
     global __last_state, __allow_next_move
     global __prob_index
+    global __wait_actions
 
     if __episode_rewards is None:
         __episode_rewards = [[] for _ in range(len(env.env_fns))]
         __episode_length = [0 for _ in range(len(env.env_fns))]
         __allow_next_move = [True for _ in range(len(env.env_fns))]
+        __wait_actions = [None for _ in range(len(env.env_fns))]
         states = env.reset()
         states = torch.tensor(states)
     else:
@@ -100,29 +119,27 @@ def game_loop_vec(env, dummy_env, model, train_callback, loss_callback, writer, 
     while not all(have_dones):
         logger.debug('M', 'states: {}', states.shape)
         actions = model.get_action(states)
+        for i in range(len(env.env_fns)):
+            if __wait_actions[i] is not None:
+                actions[i] = __wait_actions[i]
         prob = model.get_prob(states)
         prob = torch.softmax(prob, -1)
         prob = torch.mean(prob, 0).detach().cpu().numpy()
+        action_prob_dict = {}
+        action_freq_dict = {}
         for i in range(3):
-            writer.add_scalars(title+'/ActionProb_{}'.format(i), {
-                '0': prob[i, 0],
-                '1': prob[i, 1],
-                '2': prob[i, 2],
-                '3': prob[i, 3],
-                'NOP': prob[i, 4]
-            }, __prob_index)
-            cnt = np.zeros([5], dtype=np.float32)
-            for j in range(len(env.env_fns)):
-                for k in range(actions.shape[-1]):
-                    cnt[actions[j, i, k]] += 1
-            cnt /= np.sum(cnt)
-            writer.add_scalars(title+'/ActionFreq_{}'.format(i), {
-                '0': cnt[0],
-                '1': cnt[1],
-                '2': cnt[2],
-                '3': cnt[3],
-                'NOP': cnt[4]
-            }, __prob_index)
+            cnt = [0 for _ in range(5)]
+            for j in range(5):
+                for k in range(len(env.env_fns)):
+                    cnt[actions[k, i, j]] += 1
+            for j in range(5):
+                action_prob_dict['{}'.format(j)] = prob[i, j]
+                action_freq_dict['{}'.format(j)] = cnt[j] / sum(cnt)
+
+            writer.add_scalars(title+'/ActionProb_{}'.format(i), 
+                action_prob_dict, __prob_index)
+            writer.add_scalars(title+'/ActionFreq_{}'.format(i),
+                action_freq_dict, __prob_index)
 
         __prob_index += 1
         logger.debug('M', 'actions: {}', actions)
@@ -144,6 +161,17 @@ def game_loop_vec(env, dummy_env, model, train_callback, loss_callback, writer, 
             __episode_rewards[i].append(rewards[i])
             __episode_length[i] += 1
             __allow_next_move[i] = infos[i]['AllowNextMove']
+            if np.isscalar(actions[i]):
+                if actions[i] != infos[i]['RealAction']:
+                    __wait_actions[i] = actions[i]
+                else:
+                    __wait_actions[i] = None
+            else:
+                mask = (actions[i] != infos[i]['RealAction'])
+                if np.any(mask):
+                    __wait_actions[i] = np.where(mask, actions[i], dummy_env.empty_action())
+                else:
+                    __wait_actions[i] = None
             if done:
                 have_dones[i] = True
                 wins.append(infos[i]['Win'])
@@ -153,6 +181,8 @@ def game_loop_vec(env, dummy_env, model, train_callback, loss_callback, writer, 
 
                 length.append(__episode_length[i])
                 __episode_length[i] = 0
+
+                __wait_actions[i] = None
 
                 writer.add_scalar(title+'/TotalReward', total_rewards[-1], model.step)
                 writer.add_scalar(title+'/Length', length[-1], model.step)
