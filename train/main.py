@@ -119,35 +119,42 @@ def game_loop_vec(env, dummy_env, model, train_callback, loss_callback, writer, 
     while not all(have_dones):
         logger.debug('M', 'states: {}', states.shape)
         actions = model.get_action(states)
-        for i in range(len(env.env_fns)):
-            if __wait_actions[i] is not None:
-                actions[i] = __wait_actions[i]
         prob = model.get_prob(states)
         prob = torch.softmax(prob, -1)
         prob = torch.mean(prob, 0).detach().cpu().numpy()
-        action_prob_dict = {}
-        action_freq_dict = {}
-        for i in range(3):
-            cnt = [0 for _ in range(5)]
+        for i in range(3): # for each road
+            action_prob_dict = {}
+            action_freq_dict = {}
+            cnt = [0 for _ in range(5)] # for each kind of actions
+            # for j in range(actions.shape[-1]): # for each sample point
+            #     for k in range(len(env.env_fns)): # for each envs
+            #         cnt[actions[k, i, j]] += 1
+            for act in actions:
+                if act == 12:
+                    cnt[4] += 1
+                else:
+                    cnt[act % 4] += 1
+            for j in range(4): # for each action
+                action_prob_dict['{}'.format(j)] = prob[i*4+j]
             for j in range(5):
-                for k in range(len(env.env_fns)):
-                    cnt[actions[k, i, j]] += 1
-            for j in range(5):
-                action_prob_dict['{}'.format(j)] = prob[i, j]
                 action_freq_dict['{}'.format(j)] = cnt[j] / sum(cnt)
 
             writer.add_scalars(title+'/ActionProb_{}'.format(i), 
                 action_prob_dict, __prob_index)
             writer.add_scalars(title+'/ActionFreq_{}'.format(i),
                 action_freq_dict, __prob_index)
+        for i in range(len(env.env_fns)):
+            if __wait_actions[i] is not None:
+                logger.debug('M', 'action {}: {} -> {}', i, actions[i], __wait_actions[i])
+                actions[i] = __wait_actions[i]
 
         __prob_index += 1
         logger.debug('M', 'actions: {}', actions)
 
-        for i in range(len(env.env_fns)):
-            if not __allow_next_move[i]:
-                actions[i] = dummy_env.empty_action()
-        logger.debug('M', 'actions: {}', actions)
+        # for i in range(len(env.env_fns)):
+        #     if not __allow_next_move[i]:
+        #         actions[i] = dummy_env.empty_action()
+        # logger.debug('M', 'actions: {}', actions)
 
         next_states, rewards, dones, infos = env.step(actions)
         next_states = torch.tensor(next_states)
@@ -163,14 +170,18 @@ def game_loop_vec(env, dummy_env, model, train_callback, loss_callback, writer, 
             __allow_next_move[i] = infos[i]['AllowNextMove']
             if np.isscalar(actions[i]):
                 if actions[i] != infos[i]['RealAction']:
+                    logger.debug('M', 'failed {}: {} -> {}', i, actions[i], infos[i]['RealAction'])
                     __wait_actions[i] = actions[i]
                 else:
+                    logger.debug('M', 'success {}', i)
                     __wait_actions[i] = None
             else:
                 mask = (actions[i] != infos[i]['RealAction'])
                 if np.any(mask):
+                    logger.debug('M', 'failed {}: {} -> {} {}', i, actions[i], infos[i]['RealAction'], np.where(mask, actions[i], dummy_env.empty_action()))
                     __wait_actions[i] = np.where(mask, actions[i], dummy_env.empty_action())
                 else:
+                    logger.debug('M', 'success {}', i)
                     __wait_actions[i] = None
             if done:
                 have_dones[i] = True

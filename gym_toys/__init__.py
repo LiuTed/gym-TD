@@ -12,3 +12,8 @@ register(
     max_episode_steps=1000
 )
 
+register(
+    id='DiskRaisingM-v0',
+    entry_point='gym_toys.envs:DiskRaisingMultiEnv',
+    max_episode_steps=1000
+)

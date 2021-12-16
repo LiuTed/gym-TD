@@ -14,7 +14,7 @@ import gym_toys
 # logger.set_level(logger.DEBUG)
 logger.enable_all_region()
 
-directory = 'gymtest'
+directory = 'gymtest-4'
 config = Config.load_config('PPOConfig.json')
 device = Config.get_device(config)
 writer = SummaryWriter(directory+'/gymtest-result')
@@ -23,7 +23,8 @@ def env_fn(i):
     def closure(_i = i):
         # env = gym.make('LunarLander-v2')
         # env = gym.make('DistributionLearning-v0', nclass=4, discrete=True, nsample=10)
-        env = gym.make('DiskRaising-v0')
+        # env = gym.make('DiskRaising-v0')
+        env = gym.make('DiskRaisingM-v0')
         env = gym.wrappers.Monitor(env, directory+'/gymtest-log-{}'.format(_i), force=True)
         return env
     return closure
@@ -32,9 +33,9 @@ env = AsyncVectorEnv([env_fn(i) for i in range(config.num_actors)])
 
 tenv = env_fn('test')()
 
-a = Net.FullyConnected([2], [5], None, [64, 128]).to(config.device)
-c = Net.FullyConnected([2], None, [1], [64, 128]).to(config.device)
-ppo = Model.SamplerPPO(a, c, None, [2], [5], 0, config)
+a = Net.FullyConnected([4], [15], None, [64, 128]).to(config.device)
+c = Net.FullyConnected([4], None, [1], [64, 128]).to(config.device)
+ppo = Model.SamplerPPO(a, c, None, [4], [15], 0, config)
 
 # ac = Net.FullyConnected([2], [4], [1], [64, 128]).to(config.device)
 # ppo = Model.SamplerPPO(None, None, ac, [2], [4], 0, config)
@@ -56,14 +57,14 @@ while total_step < 100000:
     all_dones = [False for _ in range(config.num_actors)]
     while not all(all_dones):
         prob = ppo.get_prob(states).detach()
-        prob = torch.mean(torch.exp(prob), 0).cpu().numpy()
-        cnt = [0, 0, 0, 0, 0]
+        prob = torch.mean(torch.softmax(prob, -1), 0).cpu().numpy()
+        cnt = np.zeros((3,5))
         actions = ppo.get_action(states)
         # for row in actions:
-        #     for act in row:
-        #         cnt[act] += 1
+        #     for d in range(3):
+        #         cnt[d,row[d,0]] += 1
         for act in actions:
-            cnt[act] += 1
+            cnt[act // 5, act % 5] += 1
         for i in range(len(env.env_fns)):
             if next_actions[i] is not None:
                 actions[i] = next_actions[i]
@@ -80,26 +81,31 @@ while total_step < 100000:
         # real_acts = np.asarray(real_acts)
         # ppo.record(states, real_acts, rewards, dones)
 
-        rcnt = [0, 0, 0, 0, 0]
         for i in range(len(env.env_fns)):
             real_act = infos[i]['RealAct']
             if real_act != actions[i]:
                 next_actions[i] = actions[i]
+            # if np.any(real_act != actions[i]):
+            #     next_actions[i] = np.where(real_act != actions[i], actions[i], np.zeros_like(actions[i]))
                 # actions[i] = real_act
             else:
                 next_actions[i] = None
-            rcnt[real_act] += 1
         
-        prob_dict = {}
-        freq_dict = {}
-        real_act_dict = {}
-        for i in range(5):
-            prob_dict['E{}'.format(i)] = prob[i]
-            freq_dict['P{}'.format(i)] = cnt[i] / sum(cnt)
-            real_act_dict['P{}'.format(i)] = rcnt[i] / sum(rcnt)
-        writer.add_scalars('Train/ActionProb', prob_dict, total_step)
-        writer.add_scalars('Train/ActionFreq', freq_dict, total_step)
-        writer.add_scalars('Train/RealActionFreq', real_act_dict, total_step)
+        for d in range(3):
+            prob_dict = {}
+            # freq_dict = {}
+            # real_act_dict = {}
+            # rcnt = [0, 0, 0, 0, 0]
+            # for i in range(len(env.env_fns)):
+            #     real_act = infos[i]['RealAct']
+            #     rcnt[real_act] += 1
+            for i in range(5):
+                prob_dict['E{}'.format(i)] = prob[d*5+i]
+                # freq_dict['P{}'.format(i)] = cnt[d,i] / sum(cnt[d])
+                # real_act_dict['P{}'.format(i)] = rcnt[i] / sum(rcnt)
+            writer.add_scalars('Train/ActionProb_{}'.format(d), prob_dict, total_step)
+            # writer.add_scalars('Train/ActionFreq_{}'.format(d), freq_dict, total_step)
+            # writer.add_scalars('Train/RealActionFreq_{}'.format(d), real_act_dict, total_step)
 
         ppo.record(states, actions, rewards, dones)
 

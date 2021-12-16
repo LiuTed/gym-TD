@@ -72,7 +72,7 @@ def SamplerPPO_model(env, env_name, map_size, config):
             config
         )
     elif env_name.startswith("TD-atk"):
-        policy_shape = [env.action_space.shape[0], 5]
+        policy_shape = [env.action_space.n]
         a = Net.FCN(
             env.observation_space.shape[0],
             env.observation_space.shape[1], env.observation_space.shape[2],
@@ -87,7 +87,7 @@ def SamplerPPO_model(env, env_name, map_size, config):
             a, c, None,
             env.observation_space.shape,
             policy_shape,
-            env.action_space.shape[1],
+            0,
             config
         )
     else:
