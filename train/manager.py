@@ -16,6 +16,7 @@ if __name__ == '__main__':
     results = OrderedDict()
 
     def load_files():
+        global results
         files = os.listdir()
         for f in files:
             res = re.match('ckpt-([0-9]{6}-[0-9]{6})', f)
@@ -33,6 +34,17 @@ if __name__ == '__main__':
                 val = results.get(res.group(1), Result())
                 val.tarball = f
                 results[res.group(1)] = val
+        results = OrderedDict(sorted(results.items()))
+    
+    def stopboard():
+        for val in results.values():
+            if val.board is not None:
+                val.board.terminate()
+                val.board.wait()
+                val.board = None
+    
+    atexit.register(stopboard)
+
     
     def get_size(start, human = True):
         ts = 0
@@ -48,7 +60,7 @@ if __name__ == '__main__':
         else:
             ts = os.path.getsize(start)
         if human:
-            while ts >= 1024:
+            while ts >= 1024 and unit < 5:
                 ts /= 1024
                 unit += 1
         return ts, unit
@@ -56,7 +68,7 @@ if __name__ == '__main__':
     def result_list():
         print('ID:\tTime\t\tC L T B')
         print('Size:\tC\tL\tT')
-        units = ['B', 'KB', 'MB', 'GB', 'TB', '']
+        units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
         for i, (d, r) in enumerate(results.items()):
             print(
                 '{}:\t{}\t{} {} {} {}'.format(
@@ -113,7 +125,17 @@ if __name__ == '__main__':
     result_list()
 
     while True:
-        cmd = input('> ')
+        try:
+            cmd = input('> ')
+        except EOFError:
+            print('')
+            break
+        except KeyboardInterrupt:
+            print('')
+            break
+        except Exception as e:
+            print('Unexpected error')
+            break
         values = list(results.values())
         keys = list(results.keys())
 
@@ -127,7 +149,7 @@ if __name__ == '__main__':
         if cmd == 'exit':
             break
 
-        res = re.match('rm( checkpoint| log| tarball)*( [0-9]+| [0-9]{6}-[0-9]{6})+\s*$', cmd)
+        res = re.match('rm(\scheckpoint|\slog|\starball)*(\s[0-9]+|\s[0-9]{6}-[0-9]{6})+\s*$', cmd)
         if res is not None:
             actions = 0
             dkeys = []
@@ -142,7 +164,7 @@ if __name__ == '__main__':
                 if act == 'tarball':
                     actions |= 4
                     continue
-            for m in re.finditer(' [0-9]+| [0-9]{6}-[0-9]{6}', cmd):
+            for m in re.finditer('\s[0-9]+|\s[0-9]{6}-[0-9]{6}', cmd):
                 sid = m.group(0)
                 key, val = get_key_val(sid.strip(), keys)
                 if key is None:
@@ -193,7 +215,7 @@ if __name__ == '__main__':
             load_files()
             continue
 
-        res = re.match('board ([0-9]+|[0-9]{6}-[0-9]{6})\s*$', cmd)
+        res = re.match('board\s([0-9]+|[0-9]{6}-[0-9]{6})\s*$', cmd)
         if res is not None:
             sid = res.group(1)
             key, val = get_key_val(sid, keys)
@@ -214,7 +236,7 @@ if __name__ == '__main__':
             results[key] = val
             continue
 
-        res = re.match('stop ([0-9]+|[0-9]{6}-[0-9]{6})\s*$', cmd)
+        res = re.match('stop\s([0-9]+|[0-9]{6}-[0-9]{6})\s*$', cmd)
         if res is not None:
             sid = res.group(1)
             key, val = get_key_val(sid, keys)
@@ -229,7 +251,7 @@ if __name__ == '__main__':
             results[key] = val
             continue
 
-        res = re.match('pack ([0-9]+|[0-9]{6}-[0-9]{6})\s*$', cmd)
+        res = re.match('pack\s([0-9]+|[0-9]{6}-[0-9]{6})\s*$', cmd)
         if res is not None:
             sid = res.group(1)
             key, val = get_key_val(sid, keys)
@@ -249,7 +271,7 @@ if __name__ == '__main__':
             results[key] = val
             continue
 
-        res = re.match('unpack ([0-9]+|[0-9]{6}-[0-9]{6})\s*$', cmd)
+        res = re.match('unpack\s([0-9]+|[0-9]{6}-[0-9]{6})\s*$', cmd)
         if res is not None:
             sid = res.group(1)
             key, val = get_key_val(sid, keys)
@@ -276,7 +298,7 @@ if __name__ == '__main__':
     stop id/time: stop tensorboard of that result
     pack id/time: pack the result into tar ball
     unpack id/time: unpack the tar ball of result
-    exit: exit'''
+    exit/^D/^C: exit'''
         )
             
         

@@ -14,7 +14,7 @@ import gym_toys
 # logger.set_level(logger.DEBUG)
 logger.enable_all_region()
 
-directory = 'gymtest-4'
+directory = 'gymtest-0'
 config = Config.load_config('PPOConfig.json')
 device = Config.get_device(config)
 writer = SummaryWriter(directory+'/gymtest-result')

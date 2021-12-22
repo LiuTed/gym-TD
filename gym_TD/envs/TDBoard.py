@@ -143,6 +143,49 @@ class TDBoard(object):
 
         return s
     
+    def get_atk_valid_mask(self):
+        '''
+        Return the valid mask of actions of attacker
+        Shape = (max_num_of_roads, config.enemy_types,)
+        DType = np.bool
+        mask[i,j] == True for valid action i,j and == False for invalid action i,j
+        action i,j is to summon the enemy of type j at road i
+        '''
+        m = np.zeros((hyper_parameters.max_num_of_roads, config.enemy_types,), dtype = np.float32)
+        lv = 1 if self.progress >= config.enemy_upgrade_at else 0
+        for i, c in enumerate(config.enemy_cost):
+            if c[lv] < self.cost_atk:
+                m[i] = True
+        return m
+
+    def get_def_valid_mask(self):
+        '''
+        Return the valid mask of actions of defender
+        Shape = (config.tower_types + 2, map_size, map_size)
+        DType = np.bool
+        mask[i, j, k]:
+            (j, k): coordinate
+            i \in [0, config.tower_types): can build tower of type i
+            i == config.tower_types: can upgrade the tower
+            i == config.tower_types+1: can destruct the tower
+        True for valid action and False for invalid action
+        '''
+        m = np.zeros((config.tower_types + 2, self.map_size, self.map_size), dtype=np.bool)
+        for t in range(config.tower_types):
+            c = config.tower_cost[t][0]
+            if c > self.cost_def:
+                continue
+            for i in range(self.map_size):
+                for j in range(self.map_size):
+                    if self.map[6, i, j] == 0:
+                        m[t, i, j] = True
+        for t in self.towers:
+            if t.lv < config.max_tower_lv and \
+                config.tower_cost[t.type][t.lv+1] <= self.cost_def:
+                m[config.tower_types, t.loc[0], t.loc[1]] = True
+            m[config.tower_types+1, t.loc[0], t.loc[1]] = True
+        return m
+    
     @staticmethod
     def n_channels():
         '''
@@ -152,6 +195,7 @@ class TDBoard(object):
         45
         '''
         return 15 + 2 * config.tower_types + config.max_tower_lv + 1 + 5 * config.enemy_types
+
     @property
     def state_shape(self):
         '''
@@ -228,6 +272,10 @@ class TDBoard(object):
         if self.cost_def < p.cost:
             logger.verbose('B', 'Build tower {} ({},{}) failed due to cost shortage', t, loc[0], loc[1])
             self.__fail_code = FC.COST_SHORTAGE
+            return False
+        if len(self.towers) >= config.max_num_tower:
+            logger.verbose('B', 'Cannot build tower because reached upper limit')
+            self.__fail_code = FC.TOWER_NUMBER_LIMIT
             return False
         if self.map[6, loc[0], loc[1]] > 0:
             logger.verbose('B', 'Cannot build tower {} at ({},{})', t, loc[0], loc[1])

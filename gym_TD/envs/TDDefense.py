@@ -81,7 +81,15 @@ class TDDefense(TDGymBasic):
         reward = self._board.step()
         done = self._board.done()
         states = self._board.get_states()
+        vm = self._board.get_def_valid_mask()
         win = None
         if done:
             win = self._board.base_LP is None or self._board.base_LP > 0
-        return states, reward, done, {'RealAction': real_act, 'Win': win, 'AllowNextMove': self.defender_cd <= 1, 'FailCode': fail_code}
+        info = {
+            'RealAction': real_act,
+            'Win': win,
+            'AllowNextMove': self.defender_cd <= 1,
+            'FailCode': fail_code,
+            'ValidMask': vm
+        }
+        return states, reward, done, info

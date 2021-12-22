@@ -93,7 +93,7 @@ class DiskRaisingMultiEnv(gym.Env):
         reward = 0
         idx = action // 5
         act = action % 5
-        if 0 <= self.pos[idx] < 100:
+        if 0 < self.pos[idx] < 100:
             if self.cost < self.need[act] / self.n:
                 act = 0
             self.cost -= self.need[act] / self.n
@@ -104,37 +104,19 @@ class DiskRaisingMultiEnv(gym.Env):
             self.pos[i] -= 1
             if self.pos[i] <= 0:
                 self.pos[i] = 0
-                # self.dead[i] = 1
-                # reward -= 1
+                self.dead[i] = 1
+                reward -= 1
             elif self.pos[i] >= 100:
                 self.pos[i] = 100
                 self.dead[i] = 1
                 reward += 1
         real_action = idx * 5 + act
-        # real_action = action.copy()
-        # for i in range(self.n):
-        #     if not (0 < self.pos[i] < 100):
-        #         continue
-        #     act = action[i, 0]
-        #     if self.cost < self.need[act] / self.n:
-        #         act = 0
-
-        #     self.cost -= self.need[act] / self.n
-        #     self.pos[i] += self.gain[act] - 1
-
-        #     if self.pos[i] <= 0:
-        #         self.pos[i] = 0
-        #         reward -= 1
-        #     elif self.pos[i] >= 100:
-        #         self.pos[i] = 100
-        #         reward += 1
-        #     real_action[i, 0] = act
 
         self.cost = min(self.cost+1, self.max_cost)
 
         self.nstep += 1
 
-        done = np.all(self.pos >= 100)
+        done = np.all(np.logical_or(self.pos >= 100, self.pos <= 0))
 
         return self.state, reward, (done or self.nstep>=1000), {'RealAct': real_action}
     

@@ -120,7 +120,7 @@ class SamplerPPO(object):
                 dist = tdist.categorical.Categorical(logits=prob)
 
                 s = dist.sample([self.len_sample])
-                s = s.reshape([-1, s.shape[0]]).T
+                s = s.reshape([s.shape[0], -1]).T
 
                 if self.reduce_dim:
                     s = s.reshape(batch_shape)

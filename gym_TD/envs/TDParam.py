@@ -78,6 +78,7 @@ class Config(object):
         self.defender_init_cost = 10
         self.base_LP = 5
         self.max_cost = 100
+        self.max_num_tower = 6
 
         self.reward_kill = 0.1
         self.penalty_leak = 10.

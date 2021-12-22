@@ -3,3 +3,5 @@ ckpt*
 Result*
 *.tar.gz
 log*
+gymtest-*
+*Config.json

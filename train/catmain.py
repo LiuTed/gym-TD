@@ -15,12 +15,7 @@ from tensorboardX import SummaryWriter
 def strtime():
     return time.asctime(time.localtime(time.time()))
 
-def game_loop(
-    env, model,
-    action_callback, loop_fin_callback, train_callback, loss_callback,
-    writer, title,
-    config
-):
+def game_loop(env, model, train_callback, loss_callback, writer, title, config):
     state = env.reset()
     state = torch.Tensor([state])
 
@@ -28,14 +23,19 @@ def game_loop(
     step = 0
     rewards = []
     actions = []
+    real_actions = []
+    wait_action = None
     losses = []
     win = None
     allow_next_move = True
-    info = None
 
     while not done:
-        actions, model_infos = action_callback(model, state, info, model_infos, writer, title, config)
-        if not allow_next_move:
+        if allow_next_move:
+            if wait_action is None:
+                action = model.get_action(state)[0]
+            else:
+                action = wait_action
+        else:
             action = env.empty_action()
         next_state, r, done, info = env.step(action)
         
@@ -47,6 +47,7 @@ def game_loop(
                 losses.append(loss)
 
         if done:
+            next_state = None
             win = info['Win']
 
         state = next_state
@@ -54,7 +55,18 @@ def game_loop(
         rewards.append(r)
         if allow_next_move:
             actions.append(action)
-        loop_fin_callback(model, state, action, next_state, [r], [done], [info], model_infos, writer, title, config)
+            real_actions.append(info['RealAction'])
+            if np.isscalar(action):
+                if action != info['RealAction']:
+                    wait_action = action
+                else:
+                    wait_action = None
+            else:
+                mask = (action != info['RealAction'])
+                if np.any(mask):
+                    wait_action = np.where(mask, action, env.empty_action())
+                else:
+                    wait_action = None
 
         step += 1
         allow_next_move = info['AllowNextMove']
@@ -65,7 +77,8 @@ def game_loop(
     info = {
         'TotalReward': sum(rewards),
         'Win': win,
-        'Actions': actions
+        'Actions': actions,
+        'RealActions': real_actions
     }
 
     if loss_callback is not None and len(losses) > 0:
@@ -78,31 +91,23 @@ __episode_rewards = None
 __episode_length = None
 __last_state = None
 __allow_next_move = None
-__model_infos = None
-__infos = None
-def game_loop_vec(
-    env, dummy_env,
-    model,
-    action_callback, loop_fin_callback, train_callback, loss_callback,
-    writer, title,
-    config
-):
+__wait_actions = None
+__prob_index = 0
+def game_loop_vec(env, dummy_env, model, train_callback, loss_callback, writer, title, config):
     global __episode_rewards, __episode_length
     global __last_state, __allow_next_move
-    global __model_infos, __infos
+    global __prob_index
+    global __wait_actions
 
     if __episode_rewards is None:
         __episode_rewards = [[] for _ in range(len(env.env_fns))]
         __episode_length = [0 for _ in range(len(env.env_fns))]
         __allow_next_move = [True for _ in range(len(env.env_fns))]
+        __wait_actions = [None for _ in range(len(env.env_fns))]
         states = env.reset()
         states = torch.tensor(states)
-        infos = [None for _ in range(len(env.env_fns))]
-        model_infos = None
     else:
         states = __last_state
-        model_infos = __model_infos
-        infos = __infos
 
     have_dones = [False for _ in range(len(env.env_fns))]
     wins = []
@@ -113,28 +118,71 @@ def game_loop_vec(
 
     while not all(have_dones):
         logger.debug('M', 'states: {}', states.shape)
-        actions, model_infos = action_callback(model, states, infos, model_infos, writer, title, config)
-        
+        actions = model.get_action(states)
+        prob = model.get_prob(states)
+        prob = torch.softmax(prob, -1)
+        prob = torch.mean(prob, 0).detach().cpu().numpy()
+        for i in range(3): # for each road
+            action_prob_dict = {}
+            action_freq_dict = {}
+            cnt = [0 for _ in range(5)] # for each kind of actions
+            # for j in range(actions.shape[-1]): # for each sample point
+            #     for k in range(len(env.env_fns)): # for each envs
+            #         cnt[actions[k, i, j]] += 1
+            for act in actions:
+                if act == 12:
+                    cnt[4] += 1
+                else:
+                    cnt[act % 4] += 1
+            for j in range(4): # for each action
+                action_prob_dict['{}'.format(j)] = prob[i*4+j]
+            for j in range(5):
+                action_freq_dict['{}'.format(j)] = cnt[j] / sum(cnt)
+
+            writer.add_scalars(title+'/ActionProb_{}'.format(i), 
+                action_prob_dict, __prob_index)
+            writer.add_scalars(title+'/ActionFreq_{}'.format(i),
+                action_freq_dict, __prob_index)
+        for i in range(len(env.env_fns)):
+            if __wait_actions[i] is not None:
+                logger.debug('M', 'action {}: {} -> {}', i, actions[i], __wait_actions[i])
+                actions[i] = __wait_actions[i]
+
+        __prob_index += 1
         logger.debug('M', 'actions: {}', actions)
 
-        for i in range(len(env.env_fns)):
-            if not __allow_next_move[i]:
-                actions[i] = dummy_env.empty_action()
-        logger.debug('M', 'actions: {}', actions)
+        # for i in range(len(env.env_fns)):
+        #     if not __allow_next_move[i]:
+        #         actions[i] = dummy_env.empty_action()
+        # logger.debug('M', 'actions: {}', actions)
 
         next_states, rewards, dones, infos = env.step(actions)
         next_states = torch.tensor(next_states)
 
         if train_callback is not None:
-            loss = train_callback(model, states, actions, next_states, rewards, dones, infos, model_infos, writer, title, config)
+            loss = train_callback(model, states, actions, next_states, rewards, dones, infos, writer, title, config)
             if loss is not None:
                 losses.append(loss)
         
-        loop_fin_callback(model, states, actions, next_states, rewards, dones, infos, model_infos, writer, title, config)
         for i, done in enumerate(dones):
             __episode_rewards[i].append(rewards[i])
             __episode_length[i] += 1
             __allow_next_move[i] = infos[i]['AllowNextMove']
+            if np.isscalar(actions[i]):
+                if actions[i] != infos[i]['RealAction']:
+                    logger.debug('M', 'failed {}: {} -> {}', i, actions[i], infos[i]['RealAction'])
+                    __wait_actions[i] = actions[i]
+                else:
+                    logger.debug('M', 'success {}', i)
+                    __wait_actions[i] = None
+            else:
+                mask = (actions[i] != infos[i]['RealAction'])
+                if np.any(mask):
+                    logger.debug('M', 'failed {}: {} -> {} {}', i, actions[i], infos[i]['RealAction'], np.where(mask, actions[i], dummy_env.empty_action()))
+                    __wait_actions[i] = np.where(mask, actions[i], dummy_env.empty_action())
+                else:
+                    logger.debug('M', 'success {}', i)
+                    __wait_actions[i] = None
             if done:
                 have_dones[i] = True
                 wins.append(infos[i]['Win'])
@@ -144,6 +192,8 @@ def game_loop_vec(
 
                 length.append(__episode_length[i])
                 __episode_length[i] = 0
+
+                __wait_actions[i] = None
 
                 writer.add_scalar(title+'/TotalReward', total_rewards[-1], model.step)
                 writer.add_scalar(title+'/Length', length[-1], model.step)
@@ -155,8 +205,6 @@ def game_loop_vec(
     writer.add_scalar(title+'/AvgLength', sum(length)/len(length), model.step)
 
     __last_state = states
-    __model_infos = model_infos
-    __infos = infos
 
     info = {
         'TotalRewards': total_rewards,
@@ -168,19 +216,14 @@ def game_loop_vec(
     
     return step, info
 
-def train_loop(
-    env, dummy_env,
-    model, checkpoint,
-    action_callback, loop_fin_callback, train_callback, loss_callback,
-    writer,
-    config):
+def train_loop(env, dummy_env, model, checkpoint, train_callback, loss_callback, writer, config):
     logger.info('M', 'train_loop: start')
     for i in tqdm.tqdm(range(1, config.total_loops+1), desc='Training', unit='epsd'):
         logger.debug('M', 'train_loop: {}: start train {}/{}', strtime(), i, config.total_loops)
         nsteps = 0
         bar = tqdm.tqdm(total=config.timesteps_per_loop, leave=False, desc='Collecting', unit='ts')
         while nsteps < config.timesteps_per_loop:
-            step, info = game_loop_vec(env, dummy_env, model, action_callback, loop_fin_callback, train_callback, loss_callback, writer, 'Train', config)
+            step, info = game_loop_vec(env, dummy_env, model, train_callback, loss_callback, writer, 'Train', config)
             nsteps += step
             bar.update(step)
         del bar
@@ -249,8 +292,7 @@ def _get_args():
     parser = argparse.ArgumentParser()
 
     train_args = parser.add_argument_group('Training Arguments')
-    train_args.add_argument('-m', '--method', default='PPO', choices=['PPO', 'SamplerPPO', 'CATPPO'], type=str, help='The training method. Default: PPO')
-    train_args.add_argument('-c', '--config', default=None, type=str, help='The config file used for training.')
+    train_args.add_argument('-c', '--config', default='PPOConfig.json', type=str, help='The config file used for training.')
     train_args.add_argument('-r', '--restore', action='store_true', help='Restore from checkpoint.')
     train_args.add_argument('-s', '--checkpoint', default='./ckpt', type=str, help='The name of checkpoint. Default: ./ckpt')
     train_args.add_argument('-t', '--test', action='store_true', help='Run test.')
@@ -346,36 +388,14 @@ def _get_environment(args):
 
 def _get_model(args, env):
     # prepare model
-    if args.method == 'PPO':
-        import PPO
-        model = PPO.Callbacks.PPO_model(env, args.env, args.map_size, config)
-        train_callback = PPO.Callbacks.PPO_train
-        loss_callback = PPO.Callbacks.PPO_loss_parse
-    elif args.method == 'SamplerPPO':
-        import SamplerPPO
-        model = SamplerPPO.Callbacks.SamplerPPO_model(env, args.env, args.map_size, config)
-        train_callback = SamplerPPO.Callbacks.SamplerPPO_train
-        loss_callback = SamplerPPO.Callbacks.SamplerPPO_loss_parse
-        action_callback = SamplerPPO.Callbacks.SamplerPPO_action
-        loop_fin_callback = SamplerPPO.Callbacks.SamplerPPO_loop_fin
-    elif args.method == 'CATPPO':
-        import CATPPO
-        model = CATPPO.Callbacks.CATPPO_model(env, args.env, args.map_size, config)
-        train_callback = CATPPO.Callbacks.CATPPO_train
-        loss_callback = CATPPO.Callbacks.CATPPO_loss_parse
-        action_callback = CATPPO.Callbacks.CATPPO_action
-        loop_fin_callback = CATPPO.Callbacks.CATPPO_loop_fin
-    # elif args.method == 'DQN':
-    #     import DQN
-    #     model = DQN.Callbacks.DQN_model(env, args.map_size, config)
-    #     train_callback = DQN.Callbacks.DQN_train
-    #     loss_callback = DQN.Callbacks.DQN_loss_parse
+    import Net
+    if env.name == 'TD-atk':
+        a = Net.FCN(
+            env.observation_space.shape[0],
+            env.observation_space.shape[1], env.observation_space.shape[2],
+            [env.action_space.n], None, prob_channel=-1
+        ).to(config.device)
     
-    import CallbackWrapper
-    rfawobj = CallbackWrapper.RetryFailedActionWrapper()
-    action_callback = rfawobj.retry_failed_action_wrapper(action_callback)
-    loop_fin_callback = rfawobj.retry_failed_action_fin_wrapper(loop_fin_callback, env)
-
     if not os.path.isdir(args.checkpoint):
         os.mkdir(args.checkpoint)
     
@@ -383,7 +403,7 @@ def _get_model(args, env):
         model.restore(args.checkpoint)
     elif args.test:
         logger.warn('M', 'Testing with model not restored')
-    return model, action_callback, loop_fin_callback, train_callback, loss_callback
+    return model, train_callback, loss_callback
 
 
 if __name__ == "__main__":
@@ -406,10 +426,10 @@ if __name__ == "__main__":
 
     writer = SummaryWriter(args.log_dir)
 
-    model, action_callback, loop_fin_callback, train_callback, loss_callback = _get_model(args, dummy_env)
+    model, train_callback, loss_callback = _get_model(args, dummy_env)
     
     # start training/testing
     if args.test:
         test_loop(dummy_env, model, loss_callback, writer, config)
     else:
-        train_loop(env, dummy_env, model, args.checkpoint, action_callback, loop_fin_callback, train_callback, loss_callback, writer, config)
+        train_loop(env, dummy_env, model, args.checkpoint, train_callback, loss_callback, writer, config)
