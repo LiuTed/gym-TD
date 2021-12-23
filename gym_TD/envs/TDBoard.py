@@ -31,6 +31,7 @@ class TDBoard(object):
         self.map = np.zeros(shape=(7, map_size, map_size), dtype=np.int32)
         # is road, is road1, is road2, is road3, dist to end, where to go, how many towers nearby
         roads = TDRoadGen.create_road(np_random, map_size, num_roads)
+        self.num_roads = num_roads
         
         self.start = [r[0] for r in roads]
         self.end = roads[0][-1]
@@ -151,11 +152,11 @@ class TDBoard(object):
         mask[i,j] == True for valid action i,j and == False for invalid action i,j
         action i,j is to summon the enemy of type j at road i
         '''
-        m = np.zeros((hyper_parameters.max_num_of_roads, config.enemy_types,), dtype = np.float32)
+        m = np.zeros((hyper_parameters.max_num_of_roads, config.enemy_types,), dtype = np.bool)
         lv = 1 if self.progress >= config.enemy_upgrade_at else 0
         for i, c in enumerate(config.enemy_cost):
             if c[lv] < self.cost_atk:
-                m[i] = True
+                m[:self.num_roads, i] = True
         return m
 
     def get_def_valid_mask(self):
