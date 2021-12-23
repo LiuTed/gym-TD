@@ -103,9 +103,10 @@ def CATPPO_model(env, env_name, map_size, config):
                     dummy_mask[0] = True
                     vms.append(dummy_mask)
                 else:
-                    mask = np.empty([nvec[i]], dtype=np.bool)
+                    mask = np.zeros([nvec[i]], dtype=np.bool)
                     mask[0] = True
-                    mask[1:] = info['ValidMask'][last_actions[j]]
+                    if last_actions[j] > 0:
+                        mask[1:] = info['ValidMask'][last_actions[j] - 1]
                     vms.append(mask)
             vms = np.vstack(vms)
             return np.where(vms, np.zeros_like(vms, dtype=np.float32), np.full_like(vms, -1e7, dtype=np.float32))
