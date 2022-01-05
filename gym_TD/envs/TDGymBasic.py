@@ -43,14 +43,8 @@ class TDGymBasic(gym.Env):
         self._board = TDBoard(
             self.map_size,
             self.num_roads,
-            self.np_random,
-            config.defender_init_cost,
-            config.attacker_init_cost,
-            config.max_cost,
-            config.base_LP
+            self.np_random
         )
-        self.attacker_cd = 0
-        self.defender_cd = 0
         states = self._board.get_states()
         return states
     

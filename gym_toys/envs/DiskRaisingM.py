@@ -73,7 +73,8 @@ class DiskRaisingMultiEnv(gym.Env):
         super().__init__()
         self.observation_space = spaces.Box(low=0., high=1., shape=(1+n,), dtype=np.float32)
         # self.action_space = spaces.Box(low=0, high=len(self.need), shape=(n,1), dtype=np.int64)
-        self.action_space = spaces.Discrete(5*n)
+        # self.action_space = spaces.Discrete(5*n)
+        self.action_space = spaces.MultiDiscrete([n+1, 5])
         self.viewer = None
         self.n = n
         self.seed()
@@ -86,18 +87,29 @@ class DiskRaisingMultiEnv(gym.Env):
         obsv[1:] = self.pos / 100
         return obsv
     
+    def valid_mask(self):
+        vm = np.zeros((self.n, 5), dtype=np.bool)
+        for i in range(self.n):
+            if not self.dead[i]:
+                for j in range(len(self.need)):
+                    if self.need[j] / self.n <= self.cost:
+                        vm[i, j] = True
+        return vm
+
     def step(self, action):
         err_msg = "%r (%s) invalid" % (action, type(action))
         assert self.action_space.contains(action), err_msg
 
         reward = 0
-        idx = action // 5
-        act = action % 5
-        if 0 < self.pos[idx] < 100:
-            if self.cost < self.need[act] / self.n:
-                act = 0
-            self.cost -= self.need[act] / self.n
-            self.pos[idx] += self.gain[act]
+        act = action[1]
+        if action[0] != 0:
+            idx = action[0] - 1
+            act = action[1]
+            if 0 < self.pos[idx] < 100:
+                if self.cost < self.need[act] / self.n:
+                    act = 0
+                self.cost -= self.need[act] / self.n
+                self.pos[idx] += self.gain[act]
         for i in range(self.n):
             if self.dead[i]:
                 continue
@@ -110,7 +122,11 @@ class DiskRaisingMultiEnv(gym.Env):
                 self.pos[i] = 100
                 self.dead[i] = 1
                 reward += 1
-        real_action = idx * 5 + act
+        real_action = action
+        real_action[1] = act
+
+        if np.all(self.pos >= 100):
+            reward += 10
 
         self.cost = min(self.cost+1, self.max_cost)
 
@@ -118,7 +134,7 @@ class DiskRaisingMultiEnv(gym.Env):
 
         done = np.all(np.logical_or(self.pos >= 100, self.pos <= 0))
 
-        return self.state, reward, (done or self.nstep>=1000), {'RealAct': real_action}
+        return self.state, reward, (done or self.nstep>=1000), {'RealAct': real_action, 'ValidMask': self.valid_mask()}
     
     def reset(self):
         self.cost = 0

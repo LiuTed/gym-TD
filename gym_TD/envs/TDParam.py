@@ -91,9 +91,6 @@ class Config(object):
         self.tower_distance = 2
         self.enemy_upgrade_at = 0.75
 
-        self.attacker_action_interval = 1
-        self.defender_action_interval = 1
-
 config = Config()
 
 def paramConfig(**kwargs):
@@ -107,7 +104,6 @@ class HyperParameters(object):
     def __init__(self):
         super(HyperParameters, self).__setattr__('max_episode_steps', 1200)
         super(HyperParameters, self).__setattr__('video_frames_per_second', 50)
-        super(HyperParameters, self).__setattr__('allow_multiple_actions', False)
         super(HyperParameters, self).__setattr__('max_cluster_length', 1)
         super(HyperParameters, self).__setattr__('max_num_of_roads', 3)
     def __setattr__(self, name: str, value) -> None:

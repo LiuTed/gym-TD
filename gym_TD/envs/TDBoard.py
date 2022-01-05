@@ -11,16 +11,12 @@ class TDBoard(object):
     '''
     The implementation of basic rule and states of TD game.
     '''
-    def __init__(self, map_size, num_roads, np_random, cost_def, cost_atk, max_cost, base_LP):
+    def __init__(self, map_size, num_roads, np_random):
         '''
         Create the game field
         map_size: The length of edge of the field.
         num_roads: The number of roads generated. num_roads must be one of {1, 2, 3}
         np_random: A Numpy BitGenerator or None. Used to control the field generation.
-        cost_def: The initial costs that the defender has.
-        cost_atk: The initial costs that the attacker has.
-        max_cost: The upper limit of costs.
-        base_LP: The life point of base point.
         '''
         self.map_size = map_size
 
@@ -59,18 +55,18 @@ class TDBoard(object):
                 self.map[4, p[0], p[1]] = dist
                 dist += 1
         
-        logger.debug('B', 'Map: {}', self.map)
+        logger.debug('Board', 'Map: {}', self.map)
 
         self.enemy_LP = np.zeros((4, config.enemy_types, self.map_size, self.map_size), dtype=np.float32)
         # lowest, highest, average LP, count of enemies
 
         self.enemies = []
         self.towers = []
-        self.cost_def = cost_def
-        self.cost_atk = cost_atk
-        self.max_cost = max_cost
-        self.base_LP = base_LP
-        self.max_base_LP = base_LP
+        self.cost_def = config.defender_init_cost
+        self.cost_atk = config.attacker_init_cost
+        self.max_cost = config.max_cost
+        self.base_LP = config.base_LP
+        self.max_base_LP = config.base_LP
 
         self.viewer = None
 
@@ -124,7 +120,8 @@ class TDBoard(object):
         s[11] = self.cost_def / self.max_cost
         s[12] = self.cost_atk / self.max_cost
         s[13] = self.progress
-        s[14] = (self.map[6] == 0)
+        if len(self.towers) < config.max_num_tower:
+            s[14] = (self.map[6] == 0)
         
         tower_lv_base = 15
         tower_type_base = tower_lv_base + config.max_tower_lv + 1
@@ -229,13 +226,13 @@ class TDBoard(object):
     def summon_enemy(self, t, start_id):
         start = self.start[start_id]
         lv = 1 if self.progress >= config.enemy_upgrade_at else 0
-        logger.debug('B', 'summon_enemy: {}, {} ({},{})', t, start_id, start[0], start[1])
+        logger.debug('Board', 'summon_enemy: {}, {} ({},{})', t, start_id, start[0], start[1])
         e = create_enemy(t, start, self.map[4, start[0], start[1]], lv)
         if self.cost_atk < e.cost:
-            logger.verbose('B', 'Summon enemy {} failed due to cost shortage', t)
+            logger.verbose('Board', 'Summon enemy {} failed due to cost shortage', t)
             self.__fail_code = FC.COST_SHORTAGE
             return False
-        logger.debug('B', 'Summon enemy {}', t)
+        logger.debug('Board', 'Summon enemy {}', t)
         self.enemies.append(e)
         self.cost_atk -= e.cost
         self.__fail_code = FC.SUCCESS
@@ -244,7 +241,7 @@ class TDBoard(object):
     def summon_cluster(self, types, start_id):
         start = self.start[start_id]
         lv = 1 if self.progress >= config.enemy_upgrade_at else 0
-        logger.debug('B', 'summon_cluster: {}, {} ({},{})', types, start_id, start[0], start[1])
+        logger.debug('Board', 'summon_cluster: {}, {} ({},{})', types, start_id, start[0], start[1])
         tried = False
         summoned = False
         real_act = []
@@ -262,7 +259,7 @@ class TDBoard(object):
                 summoned = True
                 real_act.append(t)
         if (not summoned) and tried:
-            logger.verbose('B', 'Summon cluster {} failed due to cost shortage', types)
+            logger.verbose('Board', 'Summon cluster {} failed due to cost shortage', types)
             self.__fail_code = FC.COST_SHORTAGE
             return False, real_act
         self.__fail_code = FC.SUCCESS
@@ -271,18 +268,18 @@ class TDBoard(object):
     def tower_build(self, t, loc):
         p = create_tower(t, loc)
         if self.cost_def < p.cost:
-            logger.verbose('B', 'Build tower {} ({},{}) failed due to cost shortage', t, loc[0], loc[1])
+            logger.verbose('Board', 'Build tower {} ({},{}) failed due to cost shortage', t, loc[0], loc[1])
             self.__fail_code = FC.COST_SHORTAGE
             return False
         if len(self.towers) >= config.max_num_tower:
-            logger.verbose('B', 'Cannot build tower because reached upper limit')
+            logger.verbose('Board', 'Cannot build tower because reached upper limit')
             self.__fail_code = FC.TOWER_NUMBER_LIMIT
             return False
         if self.map[6, loc[0], loc[1]] > 0:
-            logger.verbose('B', 'Cannot build tower {} at ({},{})', t, loc[0], loc[1])
+            logger.verbose('Board', 'Cannot build tower {} at ({},{})', t, loc[0], loc[1])
             self.__fail_code = FC.INVALID_POSITION
             return False
-        logger.debug('B', 'Build tower {} ({},{})', t, loc[0], loc[1])
+        logger.debug('Board', 'Build tower {} ({},{})', t, loc[0], loc[1])
         self.towers.append(p)
         self.cost_def -= p.cost
         for i in range(-config.tower_distance, config.tower_distance+1):
@@ -299,23 +296,23 @@ class TDBoard(object):
         for t in self.towers:
             if loc == t.loc:
                 if t.lv >= config.max_tower_lv:
-                    logger.verbose('B', 'Tower LV up ({},{}) failed because lv max', loc[0], loc[1])
+                    logger.verbose('Board', 'Tower LV up ({},{}) failed because lv max', loc[0], loc[1])
                     self.__fail_code = FC.LV_MAX
                     return False
                 cost = config.tower_cost[t.type][t.lv+1]
                 if self.cost_def < cost:
-                    logger.verbose('B', 'Tower LV up ({},{}) failed due to cost shortage', loc[0], loc[1])
+                    logger.verbose('Board', 'Tower LV up ({},{}) failed due to cost shortage', loc[0], loc[1])
                     self.__fail_code = FC.COST_SHORTAGE
                     return False
                 if not upgrade_tower(t):
-                    logger.verbose('B', 'Tower LV up ({},{}) failed', loc[0], loc[1])
+                    logger.verbose('Board', 'Tower LV up ({},{}) failed', loc[0], loc[1])
                     self.__fail_code = FC.LV_MAX
                     return False
-                logger.debug('B', 'Tower LV up ({},{})', loc[0], loc[1])
+                logger.debug('Board', 'Tower LV up ({},{})', loc[0], loc[1])
                 self.cost_def -= cost
                 self.__fail_code = FC.SUCCESS
                 return True
-        logger.verbose('B', 'No tower at ({},{})', loc[0], loc[1])
+        logger.verbose('Board', 'No tower at ({},{})', loc[0], loc[1])
         self.__fail_code = FC.UNKNOWN_TARGET
         return False
 
@@ -325,7 +322,7 @@ class TDBoard(object):
                 self.cost_def += t.cost * config.tower_destruct_return
                 self.cost_def = min(self.cost_def, self.max_cost)
                 self.towers.remove(t)
-                logger.debug('B', 'Destruct tower ({},{})', loc[0], loc[1])
+                logger.debug('Board', 'Destruct tower ({},{})', loc[0], loc[1])
 
                 for i in range(-config.tower_distance, config.tower_distance+1):
                     for j in range(-config.tower_distance, config.tower_distance+1):
@@ -337,7 +334,7 @@ class TDBoard(object):
 
                 self.__fail_code = FC.SUCCESS
                 return True
-        logger.verbose('B', 'No tower at ({},{})', loc[0], loc[1])
+        logger.verbose('Board', 'No tower at ({},{})', loc[0], loc[1])
         self.__fail_code = FC.UNKNOWN_TARGET
         return False
     
@@ -348,7 +345,7 @@ class TDBoard(object):
         reward += config.reward_time
         self.steps += 1
         self.progress = self.steps / hyper_parameters.max_episode_steps
-        logger.debug('B', 'Step: {}->{}', self.steps-1, self.steps)
+        logger.debug('Board', 'Step: {}->{}', self.steps-1, self.steps)
 
         to_del = []
         self.enemies.sort(key=lambda x: x.dist - x.margin)
@@ -385,10 +382,10 @@ class TDBoard(object):
                 if e.loc == self.end:
                     if self.base_LP is not None and self.base_LP > 0:
                         reward -= config.penalty_leak
-                    logger.debug('B', 'Leak {}', e.type)
+                    logger.debug('Board', 'Leak {}', e.type)
                     toremove.append(e)
                     if self.base_LP is not None:
-                        logger.debug('B', 'LP: {} -> {}', self.base_LP, max(self.base_LP-1, 0))
+                        logger.debug('Board', 'LP: {} -> {}', self.base_LP, max(self.base_LP-1, 0))
                         self.base_LP = max(self.base_LP-1, 0)
                     break
         for e in toremove:
@@ -413,7 +410,7 @@ class TDBoard(object):
         self.enemy_LP[2] = np.where(self.enemy_LP[3] > 0, self.enemy_LP[2] / self.enemy_LP[3], np.zeros_like(self.enemy_LP[2]))
         self.enemy_LP[3] /= hyper_parameters.max_cluster_length
 
-        logger.debug('B', 'Reward: {}', reward)
+        logger.debug('Board', 'Reward: {}', reward)
         return reward
     
     def done(self):

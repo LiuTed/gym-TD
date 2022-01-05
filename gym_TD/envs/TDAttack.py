@@ -8,8 +8,6 @@ import gym_TD.utils.fail_code as FC
 
 import numpy as np
 
-import random
-
 class TDAttack(TDGymBasic):
     metadata = {
         "render.modes": ['human', 'rgb_array'],
@@ -34,60 +32,47 @@ class TDAttack(TDGymBasic):
             if not(isinstance(action, (tuple, list, np.ndarray)) and self.action_space.contains(action[0])):
                 err_msg = "%r (%s) invalid" % (action, type(action))
                 assert False, err_msg
+            else:
+                action = action[0]
 
-        self.attacker_cd = max(self.attacker_cd-1, 0)
-        self.defender_cd = max(self.defender_cd-1, 0)
-        
-        # # Box
+        # Box
         # real_act = np.copy(action)
         # fail_code = []
-        # if self.attacker_cd == 0:
-        #     for i in range(self.num_roads):
-        #         cluster = action[i]
-        #         if np.all(cluster == config.enemy_types):
-        #             fail_code.append(0)
-        #             continue
-        #         res, real = self._board.summon_cluster(cluster, i)
-        #         if res:
-        #             self.attacker_cd = config.attacker_action_interval
-        #         real_act[i] = real
-        #         fail_code.append(self._board.fail_code)
+        # for i in range(self.num_roads):
+        #     cluster = action[i]
+        #     if np.all(cluster == config.enemy_types):
+        #         fail_code.append(0)
+        #         continue
+        #     res, real = self._board.summon_cluster(cluster, i)
+        #     real_act[i] = real
+        #     fail_code.append(self._board.fail_code)
 
-        # # Discrete
+        # Discrete
         # real_act = action
         # fail_code = 0
-        # if self.attacker_cd == 0:
-        #     if action != hyper_parameters.max_num_of_roads * config.enemy_types:
-        #         road = action // config.enemy_types
-        #         t = action % config.enemy_types
-        #         if road < self.num_roads:
-        #             res = self._board.summon_enemy(t, road)
-        #             if res:
-        #                 self.attacker_cd = config.attacker_action_interval
-        #             else:
-        #                 real_act = hyper_parameters.max_num_of_roads * config.enemy_types
-        #             fail_code = self._board.fail_code
+        # if action != hyper_parameters.max_num_of_roads * config.enemy_types:
+        #     road = action // config.enemy_types
+        #     t = action % config.enemy_types
+        #     if road < self.num_roads:
+        #         res = self._board.summon_enemy(t, road)
+        #         if not res:
+        #             real_act = hyper_parameters.max_num_of_roads * config.enemy_types
+        #         fail_code = self._board.fail_code
 
-        # # MultiDiscrete
+        # MultiDiscrete
         real_act = action
         fail_code = 0
-        if self.attacker_cd == 0:
-            if action[0] > self.num_roads:
-                real_act = [0, 0]
-                fail_code = FC.INVALID_ACTION
-            elif action[0] > 0:
-                if 0 < action[1] <= config.enemy_types:
-                    road = action[0] - 1
-                    t = action[1] - 1
-                    res = self._board.summon_enemy(t, road)
-                    if res:
-                        self.attacker_cd = config.attacker_action_interval
-                    else:
-                        real_act[1] = 0
-                    fail_code = self._board.fail_code
-        else:
+        if action[0] > self.num_roads:
             real_act = [0, 0]
-            fail_code = FC.ACTION_CD
+            fail_code = FC.INVALID_ACTION
+        elif action[0] > 0:
+            if 0 < action[1] <= config.enemy_types:
+                road = action[0] - 1
+                t = action[1] - 1
+                res = self._board.summon_enemy(t, road)
+                if not res:
+                    real_act[1] = 0
+                fail_code = self._board.fail_code
         
         self.agent()
 
@@ -101,7 +86,6 @@ class TDAttack(TDGymBasic):
         info = {
             'RealAction': real_act,
             'Win': win,
-            'AllowNextMove': self.attacker_cd <= 1,
             'FailCode': fail_code,
             'ValidMask': vm
         }
