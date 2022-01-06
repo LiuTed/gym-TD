@@ -103,8 +103,8 @@ class TDBoard(object):
         [a, a+# enemy type): lowest enemy LP of type [0, # enemy type)
         [a+# enemy type, a+2 # enemy type): highest enemy LP of type [0, # enemy type)
         [a+2 # enemy type, a+3 # enemy type): average enemy LP of type [0, # enemy type)
-        [a+3 # enemy type, a+4 # enemy type): number of enemies of type [0, # enemy type)
-        [a+4 # enemy type, a+5 # enemy type): how many enemies could be summoned of type [0, # enemy type)
+        # [a+3 # enemy type, a+4 # enemy type): number of enemies of type [0, # enemy type)
+        [a+3 # enemy type, a+4 # enemy type): how many enemies could be summoned of type [0, # enemy type)
         '''
         s = np.zeros(shape=self.state_shape, dtype=np.float32)
         s[0:4] = self.map[0:4]
@@ -133,13 +133,25 @@ class TDBoard(object):
             s[tower_build_base + t] = 1 if self.cost_def >= config.tower_cost[t][0] else 0
         
         enemy_channel_base = tower_build_base + config.tower_types
-        can_summon_base = enemy_channel_base + 4 * config.enemy_types
+        can_summon_base = enemy_channel_base + 3 * config.enemy_types
 
-        s[enemy_channel_base: can_summon_base] = self.enemy_LP.reshape((4*config.enemy_types, self.map_size, self.map_size))
+        s[enemy_channel_base: can_summon_base] = self.enemy_LP[0:3].reshape((3*config.enemy_types, self.map_size, self.map_size))
         for t in range(config.enemy_types):
             s[can_summon_base + t] = self.cost_def / config.enemy_cost[t][0] / hyper_parameters.max_cluster_length
 
-        return s
+        return s.transpose([1, 2, 0])
+    
+    @staticmethod
+    def _high(ms):
+        h = np.ones(shape=(ms, ms, TDBoard.n_channels()), dtype=np.float32)
+        tower_lv_base = 15
+        tower_type_base = tower_lv_base + config.max_tower_lv + 1
+        tower_build_base = tower_type_base + config.tower_types
+        enemy_channel_base = tower_build_base + config.tower_types
+        can_summon_base = enemy_channel_base + 3 * config.enemy_types
+        for t in range(config.enemy_types):
+            h[:, :, can_summon_base + t] = config.max_cost / config.enemy_cost[t][0] / hyper_parameters.max_cluster_length
+        return h
     
     def get_atk_valid_mask(self):
         '''
@@ -190,9 +202,9 @@ class TDBoard(object):
         Return how many channels there will be in the state tensor
 
         >>> TDBoard.n_channels()
-        45
+        41
         '''
-        return 15 + 2 * config.tower_types + config.max_tower_lv + 1 + 5 * config.enemy_types
+        return 15 + 2 * config.tower_types + config.max_tower_lv + 1 + 4 * config.enemy_types
 
     @property
     def state_shape(self):
@@ -201,7 +213,7 @@ class TDBoard(object):
 
         >>> board = TDBoard(10, 2, None, 10, 10, 100, 5)
         >>> board.state_shape
-        (45, 10, 10)
+        (41, 10, 10)
         '''
         return (self.n_channels(), self.map_size, self.map_size)
     
@@ -408,7 +420,7 @@ class TDBoard(object):
             self.enemy_LP[3, e.type, e.loc[0], e.loc[1]] += 1
         self.enemy_LP[0] = np.where(self.enemy_LP[3] > 0, self.enemy_LP[0], np.zeros_like(self.enemy_LP[0]))
         self.enemy_LP[2] = np.where(self.enemy_LP[3] > 0, self.enemy_LP[2] / self.enemy_LP[3], np.zeros_like(self.enemy_LP[2]))
-        self.enemy_LP[3] /= hyper_parameters.max_cluster_length
+        # self.enemy_LP[3] /= hyper_parameters.max_cluster_length
 
         logger.debug('Board', 'Reward: {}', reward)
         return reward

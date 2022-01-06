@@ -1,5 +1,6 @@
 import gym
 from ray.tune.logger import pretty_print
+from ray.tune.session import report
 import gym_TD
 from gym_TD.utils import logger
 
@@ -24,21 +25,27 @@ def _get_args():
     env_args = parser.add_argument_group('Environment Arguments')
     env_args.add_argument('-E', '--env', type=str, choices=['TD-def', 'TD-atk', 'TD-2p'], required=True, help='Environment')
     env_args.add_argument('--env-config', type=str, required=True, help='The environment config file')
+    env_args.add_argument('--render-env', action='store_true')
+    env_args.add_argument('--record-env', nargs='?', default=False, const=True)
 
     args = parser.parse_args()
     return args
 
 def _get_config(args):
     import gym_TD.envs
+    from ray.tune.registry import register_env
     if args.env == 'TD-def':
-        env = lambda c: gym_TD.envs.TDDefense(**c)
+        register_env('TD-def-v0', lambda c: gym_TD.envs.TDDefense(**c))
+        env = 'TD-def-v0'
     elif args.env == 'TD-atk':
-        env = lambda c: gym_TD.envs.TDAttack(**c)
+        register_env('TD-atk-v0', lambda c: gym_TD.envs.TDAttack(**c))
+        env = 'TD-atk-v0'
     elif args.env == 'TD-2p':
-        env = lambda c: gym_TD.envs.TDMulti(**c)
+        register_env('TD-2p-v0', lambda c: gym_TD.envs.TDMulti(**c))
+        env = 'TD-2p-v0'
     else:
-        logger.error('main', 'Unknown environment {}', args.env)
-        assert False
+        logger.warn('main', 'Unknown environment {}', args.env)
+        env = args.env
     
     import json
     with open(args.model_config, 'r') as f:
@@ -52,7 +59,10 @@ def _get_config(args):
         'framework': 'torch',
         'num_workers': args.num_workers,
         'model': model_config,
-        'lr': args.lr
+        'lr': args.lr,
+        'render_env': args.render_env,
+        'record_env': args.record_env,
+        'num_gpus': 1
     }
 
     stop = {
@@ -82,7 +92,9 @@ if __name__ == '__main__':
                 result["episode_reward_mean"] >= args.stop_reward:
                 break
     else:
-        results = tune.run(args.method, config=config, stop=stop)
+        from ray.tune import CLIReporter
+        reporter = CLIReporter(max_progress_rows=10, metric_columns=['episode_reward_mean', 'episodes_this_iter'])
+        results = tune.run(args.method, config=config, stop=stop, progress_reporter=reporter)
         if args.as_test:
             from ray.rllib.utils.test_utils import check_learning_achieved
             check_learning_achieved(results, args.stop_reward)

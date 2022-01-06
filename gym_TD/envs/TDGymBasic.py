@@ -18,7 +18,7 @@ class TDGymBasic(gym.Env):
     def __init__(self, map_size, seed, fixed_seed = False, random_agent = True):
         super(TDGymBasic, self).__init__()
         self.observation_space = \
-            spaces.Box(low=0., high=1., shape=(TDBoard.n_channels(), map_size, map_size), dtype=np.float32)
+            spaces.Box(low=0., high=TDBoard._high(map_size), shape=(map_size, map_size, TDBoard.n_channels()), dtype=np.float32)
         self.map_size = map_size
         self._board = None
         self.fixed_seed = fixed_seed
@@ -73,217 +73,199 @@ class TDGymBasic(gym.Env):
         self._board.step()
     
     def random_enemy_lv0(self):
-        if self.attacker_cd == 0:
-            if self.random_agent:
-                import random
-                cluster = [random.randint(0, config.enemy_types) for _ in range(hyper_parameters.max_cluster_length)]
-                road = random.randint(0, self.num_roads-1)
-            else:
-                cluster = self.np_random.randint(0, config.enemy_types, [hyper_parameters.max_cluster_length], dtype=np.int64)
-                road = self.np_random.randint(self.num_roads)
-            if self._board.summon_cluster(
-                cluster, road
-            ):
-                self.attacker_cd = config.attacker_action_interval
+        if self.random_agent:
+            import random
+            cluster = [random.randint(0, config.enemy_types) for _ in range(hyper_parameters.max_cluster_length)]
+            road = random.randint(0, self.num_roads-1)
+        else:
+            cluster = self.np_random.randint(0, config.enemy_types, [hyper_parameters.max_cluster_length], dtype=np.int64)
+            road = self.np_random.randint(self.num_roads)
+        self._board.summon_cluster(
+            cluster, road
+        )
     
     def random_enemy_lv1(self):
-        if self.attacker_cd == 0:
-            if self.random_agent:
-                import random
-                t = random.randint(0, config.enemy_types-1)
-                road = random.randint(0, self.num_roads-1)
-            else:
-                t = self.np_random.randint(0, config.enemy_types)
-                road = self.np_random.randint(self.num_roads)
-            cluster = np.full([hyper_parameters.max_cluster_length], t)
-            if self._board.summon_cluster(
-                cluster, road
-            ):
-                self.attacker_cd = config.attacker_action_interval
+        if self.random_agent:
+            import random
+            t = random.randint(0, config.enemy_types-1)
+            road = random.randint(0, self.num_roads-1)
+        else:
+            t = self.np_random.randint(0, config.enemy_types)
+            road = self.np_random.randint(self.num_roads)
+        cluster = np.full([hyper_parameters.max_cluster_length], t)
+        self._board.summon_cluster(
+            cluster, road
+        )
 
                 
     def random_tower_lv0(self):
-        if self.defender_cd == 0:
-            if self.random_agent:
-                import random
-                r = random.randint(0, self.map_size-1)
-                c = random.randint(0, self.map_size-1)
-                t = random.randint(0, config.tower_types-1)
-            else:
-                r, c = self.np_random.randint(0, self.map_size, [2,])
-                t = self.np_random.randint(0, config.tower_types)
-            if self._board.tower_build(t, [r,c]):
-                self.defender_cd = config.defender_action_interval
+        if self.random_agent:
+            import random
+            r = random.randint(0, self.map_size-1)
+            c = random.randint(0, self.map_size-1)
+            t = random.randint(0, config.tower_types-1)
+        else:
+            r, c = self.np_random.randint(0, self.map_size, [2,])
+            t = self.np_random.randint(0, config.tower_types)
+        self._board.tower_build(t, [r,c])
 
     def random_tower_lv1(self):
         dp = [[r, c] for r in range(-2, 3) for c in range(-2, 3)]
-        if self.defender_cd == 0:
-            if getattr(self, '__wait_for_cost_rt1', None) is not None:
-                if self._board.tower_build(*self.__wait_for_cost_rt1):
-                    self.defender_cd = config.defender_action_interval
+        if getattr(self, '__wait_for_cost_rt1', None) is not None:
+            if self._board.tower_build(*self.__wait_for_cost_rt1):
+                self.__wait_for_cost_rt1 = None
+            else:
+                if self._board.fail_code != FC.COST_SHORTAGE:
                     self.__wait_for_cost_rt1 = None
-                else:
-                    if self._board.fail_code != FC.COST_SHORTAGE:
-                        self.__wait_for_cost_rt1 = None
-                return
+            return
 
+        if self.random_agent:
+            import random
+            act = random.randint(0, 2)
+        else:
+            act = self.np_random.randint(0, 3)
+
+        if act == 0:
+            roads = []
+            for r in range(self.map_size):
+                for c in range(self.map_size):
+                    if self._board.map[0, r, c] == 1:
+                        roads.append([r, c])
+            
             if self.random_agent:
-                import random
-                act = random.randint(0, 2)
+                random.shuffle(roads)
+                t = random.randint(0, config.tower_types-1)
             else:
-                act = self.np_random.randint(0, 3)
+                self.np_random.shuffle(roads)
+                t = self.np_random.randint(0, config.tower_types)
 
-            if act == 0:
-                roads = []
-                for r in range(self.map_size):
-                    for c in range(self.map_size):
-                        if self._board.map[0, r, c] == 1:
-                            roads.append([r, c])
-                
+            for r, c in roads:
                 if self.random_agent:
-                    random.shuffle(roads)
-                    t = random.randint(0, config.tower_types-1)
+                    d = dp[random.randint(0, len(dp)-1)]
                 else:
-                    self.np_random.shuffle(roads)
-                    t = self.np_random.randint(0, config.tower_types)
-
-                for r, c in roads:
-                    if self.random_agent:
-                        d = dp[random.randint(0, len(dp)-1)]
-                    else:
-                        d = dp[self.np_random.randint(0, len(dp))]
-                    pos = [r+d[0], c+d[1]]
-                    if not self._board.is_valid_pos(pos):
-                        continue
-                    if self._board.tower_build(t, pos):
-                        self.defender_cd = config.defender_action_interval
-                        return
-                    else:
-                        if self._board.fail_code == FC.COST_SHORTAGE:
-                            self.__wait_for_cost_rt1 = [t, pos]
-                            return
-            elif act == 1:
-                if len(self._board.towers) == 0:
+                    d = dp[self.np_random.randint(0, len(dp))]
+                pos = [r+d[0], c+d[1]]
+                if not self._board.is_valid_pos(pos):
+                    continue
+                if self._board.tower_build(t, pos):
                     return
-                if self.random_agent:
-                    id = random.randint(0, len(self._board.towers)-1)
                 else:
-                    id = self.np_random.randint(0, len(self._board.towers))
-                if self._board.tower_lvup(self._board.towers[id].loc):
-                    self.defender_cd = config.defender_action_interval
-                    return
-            elif act == 2:
-                if len(self._board.towers) == 0:
-                    return
-                if self.random_agent:
-                    if random.random() > .01:
+                    if self._board.fail_code == FC.COST_SHORTAGE:
+                        self.__wait_for_cost_rt1 = [t, pos]
                         return
-                    id = random.randint(0, len(self._board.towers)-1)
-                else:
-                    if self.np_random.random() > .01:
-                        return
-                    id = random.randint(0, len(self._board.towers)-1)
-                if self._board.tower_destruct(self._board.towers[id].loc):
-                    self.defender_cd = config.defender_action_interval
-                    return
-            else:
+        elif act == 1:
+            if len(self._board.towers) == 0:
                 return
-    
+            if self.random_agent:
+                id = random.randint(0, len(self._board.towers)-1)
+            else:
+                id = self.np_random.randint(0, len(self._board.towers))
+            self._board.tower_lvup(self._board.towers[id].loc)
+        elif act == 2:
+            if len(self._board.towers) == 0:
+                return
+            if self.random_agent:
+                if random.random() > .01:
+                    return
+                id = random.randint(0, len(self._board.towers)-1)
+            else:
+                if self.np_random.random() > .01:
+                    return
+                id = random.randint(0, len(self._board.towers)-1)
+            self._board.tower_destruct(self._board.towers[id].loc)
+        else:
+            return
+
     def random_tower_lv2(self):
         dp = [[r, c] for r in range(-2, 3) for c in range(-2, 3)]
-        if self.defender_cd == 0:
-            if getattr(self, '__wait_for_cost_rt2', None) is not None:
-                if self._board.tower_build(*self.__wait_for_cost_rt2):
-                    self.defender_cd = config.defender_action_interval
+        if getattr(self, '__wait_for_cost_rt2', None) is not None:
+            if self._board.tower_build(*self.__wait_for_cost_rt2):
+                self.__wait_for_cost_rt2 = None
+            else:
+                if self._board.fail_code != FC.COST_SHORTAGE:
                     self.__wait_for_cost_rt2 = None
-                else:
-                    if self._board.fail_code != FC.COST_SHORTAGE:
-                        self.__wait_for_cost_rt2 = None
-                return
+            return
 
+        if self.random_agent:
+            import random
+            act = random.randint(0, 2)
+        else:
+            act = self.np_random.randint(0, 3)
+
+        if act == 0:
+            roads = []
+            et = list(map(lambda x: x.type, self._board.enemies))
+            if len(et) == 0:
+                return
+            types, nums = np.unique(et, return_counts=True)
+            ratio = nums.astype(np.float32) / np.sum(nums)
             if self.random_agent:
-                import random
-                act = random.randint(0, 2)
+                p = random.random()
             else:
-                act = self.np_random.randint(0, 3)
-
-            if act == 0:
-                roads = []
-                et = list(map(lambda x: x.type, self._board.enemies))
-                if len(et) == 0:
-                    return
-                types, nums = np.unique(et, return_counts=True)
-                ratio = nums.astype(np.float32) / np.sum(nums)
-                if self.random_agent:
-                    p = random.random()
+                p = self.np_random.random()
+            for i in range(4):
+                if p < ratio[i]:
+                    t = types[i]
+                    break
                 else:
-                    p = self.np_random.random()
-                for i in range(4):
-                    if p < ratio[i]:
-                        t = types[i]
-                        break
-                    else:
-                        p -= ratio[i]
-                
-                t = [2, 0, 1, 0][t]
-                if self.random_agent:
-                    p = random.random()
-                else:
-                    p = self.np_random.random()
-                if p < 0.2:
-                    t = 3
-
-                for r in range(self.map_size):
-                    for c in range(self.map_size):
-                        if self._board.map[0, r, c] == 1:
-                            roads.append([r, c])
-                
-                if self.random_agent:
-                    random.shuffle(roads)
-                else:
-                    self.np_random.shuffle(roads)
-
-                for r, c in roads:
-                    if self.random_agent:
-                        d = dp[random.randint(0, len(dp)-1)]
-                    else:
-                        d = dp[self.np_random.randint(0, len(dp))]
-                    pos = [r+d[0], c+d[1]]
-                    if not self._board.is_valid_pos(pos):
-                        continue
-                    if self._board.tower_build(t, pos):
-                        self.defender_cd = config.defender_action_interval
-                        return
-                    else:
-                        if self._board.fail_code == FC.COST_SHORTAGE:
-                            self.__wait_for_cost_rt2 = [t, pos]
-                            return
-            elif act == 1:
-                if len(self._board.towers) == 0:
-                    return
-                if self.random_agent:
-                    id = random.randint(0, len(self._board.towers)-1)
-                else:
-                    id = self.np_random.randint(0, len(self._board.towers))
-                if self._board.tower_lvup(self._board.towers[id].loc):
-                    self.defender_cd = config.defender_action_interval
-                    return
-            elif act == 2:
-                if len(self._board.towers) == 0:
-                    return
-                if self.random_agent:
-                    if random.random() > .01:
-                        return
-                    id = random.randint(0, len(self._board.towers)-1)
-                else:
-                    if self.np_random.random() > .01:
-                        return
-                    id = random.randint(0, len(self._board.towers)-1)
-                if self._board.tower_destruct(self._board.towers[id].loc):
-                    self.defender_cd = config.defender_action_interval
-                    return
+                    p -= ratio[i]
+            
+            t = [2, 0, 1, 0][t]
+            if self.random_agent:
+                p = random.random()
             else:
+                p = self.np_random.random()
+            if p < 0.2:
+                t = 3
+
+            for r in range(self.map_size):
+                for c in range(self.map_size):
+                    if self._board.map[0, r, c] == 1:
+                        roads.append([r, c])
+            
+            if self.random_agent:
+                random.shuffle(roads)
+            else:
+                self.np_random.shuffle(roads)
+
+            for r, c in roads:
+                if self.random_agent:
+                    d = dp[random.randint(0, len(dp)-1)]
+                else:
+                    d = dp[self.np_random.randint(0, len(dp))]
+                pos = [r+d[0], c+d[1]]
+                if not self._board.is_valid_pos(pos):
+                    continue
+                if self._board.tower_build(t, pos):
+                    return
+                else:
+                    if self._board.fail_code == FC.COST_SHORTAGE:
+                        self.__wait_for_cost_rt2 = [t, pos]
+                        return
+        elif act == 1:
+            if len(self._board.towers) == 0:
                 return
+            if self.random_agent:
+                id = random.randint(0, len(self._board.towers)-1)
+            else:
+                id = self.np_random.randint(0, len(self._board.towers))
+            if self._board.tower_lvup(self._board.towers[id].loc):
+                return
+        elif act == 2:
+            if len(self._board.towers) == 0:
+                return
+            if self.random_agent:
+                if random.random() > .01:
+                    return
+                id = random.randint(0, len(self._board.towers)-1)
+            else:
+                if self.np_random.random() > .01:
+                    return
+                id = random.randint(0, len(self._board.towers)-1)
+            if self._board.tower_destruct(self._board.towers[id].loc):
+                return
+        else:
+            return
 
 
     def render(self, mode="human"):
